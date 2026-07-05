@@ -1,13 +1,729 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ZayderFlow</title>
+<style>
+  /* ============ design system (herdado do Zayder) ============ */
+  :root, :root[data-theme="dark"]{
+    --bg:#0b0e13; --bg-elev:#0e131a; --bg-deep:#070a0e;
+    --panel:#141a22; --panel2:#1b222d; --panel3:#232c3a;
+    --line:#2a3342; --line-soft:#1e2632;
+    --text:#e3e8f0; --text-strong:#f6f9fd; --dim:#8c97a6; --dim2:#6a7585;
+    --accent:#5b93ff; --accent-2:#85aaff; --accent-ghost:rgba(91,147,255,.14); --accent-line:rgba(91,147,255,.42);
+    --on-accent:#06122b;
+    --ok:#3ecf8e; --ok-2:#5fe0a4; --ok-ghost:rgba(62,207,142,.13); --ok-line:rgba(62,207,142,.42); --on-ok:#04160e;
+    --warn:#f5b942; --warn-ghost:rgba(245,185,66,.12); --warn-line:rgba(245,185,66,.45);
+    --err:#ff6b6b; --err-ghost:rgba(255,107,107,.11);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.35); --shadow:0 10px 34px rgba(0,0,0,.40); --shadow-lg:0 18px 50px rgba(0,0,0,.55);
+    --grid-dot:rgba(140,151,166,.13);
+    color-scheme:dark;
+  }
+  :root[data-theme="light"]{
+    --bg:#f4f6f9; --bg-elev:#fbfcfe; --bg-deep:#0d1117;
+    --panel:#ffffff; --panel2:#f1f4f8; --panel3:#e8edf3;
+    --line:#dde2ea; --line-soft:#e8ecf2;
+    --text:#1b2330; --text-strong:#0c111b; --dim:#5a6675; --dim2:#8a94a3;
+    --accent:#2f66e6; --accent-2:#2257cf; --accent-ghost:rgba(47,102,230,.10); --accent-line:rgba(47,102,230,.35);
+    --on-accent:#ffffff;
+    --ok:#159a66; --ok-2:#10885a; --ok-ghost:rgba(21,154,102,.11); --ok-line:rgba(21,154,102,.34); --on-ok:#ffffff;
+    --warn:#a9710f; --warn-ghost:rgba(169,113,15,.10); --warn-line:rgba(169,113,15,.32);
+    --err:#d6433d; --err-ghost:rgba(214,67,61,.09);
+    --shadow-sm:0 1px 2px rgba(16,24,40,.05); --shadow:0 10px 34px rgba(16,24,40,.10); --shadow-lg:0 18px 50px rgba(16,24,40,.14);
+    --grid-dot:rgba(90,102,117,.16);
+    color-scheme:light;
+  }
+  :root{
+    --mono: ui-monospace, "Cascadia Code", "SF Mono", "Roboto Mono", Consolas, "Liberation Mono", Menlo, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --radius:13px; --radius-sm:9px;
+    --node-w:196px;
+  }
+
+  *{ box-sizing:border-box; }
+  *{ scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
+
+  html, body{ height:100%; }
+  body{ margin:0; color:var(--text); font:14px/1.55 var(--sans);
+        -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+        background:var(--bg); display:flex; flex-direction:column; overflow:hidden; }
+
+  /* ---------------- header ---------------- */
+  header{ display:flex; align-items:center; gap:12px; padding:9px 16px;
+          background:var(--panel); border-bottom:1px solid var(--line); z-index:30; flex:none; }
+  .brand{ display:inline-flex; align-items:center; gap:10px; user-select:none; }
+  .brand .logo{ width:28px; height:28px; display:block; filter:drop-shadow(0 3px 9px rgba(8,16,40,.45)); }
+  .wordmark{ font:800 18px/1 var(--sans); letter-spacing:-.025em; }
+  .wm-1{ color:var(--text-strong); } .wm-2{ color:var(--accent-2); }
+  .grow{ flex:1; }
+  #graphName{ background:transparent; border:1px solid transparent; color:var(--dim); font:600 13px var(--sans);
+              border-radius:8px; padding:6px 10px; width:220px; transition:border-color .15s, background .15s, color .15s; }
+  #graphName:hover{ border-color:var(--line); color:var(--text); }
+  #graphName:focus{ outline:none; border-color:var(--accent); background:var(--panel2); color:var(--text-strong); }
+  #cost{ font:600 13px/1 var(--mono); color:var(--ok-2); }
+  .savings{ font:600 12px/1.1 var(--sans); color:var(--ok-2); background:var(--ok-ghost);
+            border:1px solid var(--ok-line); border-radius:999px; padding:6px 11px; cursor:help; white-space:nowrap; }
+  .badge{ padding:5px 12px; border-radius:999px; font:600 12px/1 var(--sans);
+          border:1px solid var(--line); background:var(--panel2); color:var(--dim);
+          display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+  .badge::before{ content:""; width:7px; height:7px; border-radius:50%; background:currentColor; }
+  .badge.running, .badge.waiting_approval{ color:var(--accent-2); border-color:var(--accent-line); background:var(--accent-ghost); }
+  .badge.running::before{ animation:pulse 1.15s ease-in-out infinite; }
+  .badge.done{ color:var(--ok-2); border-color:var(--ok-line); background:var(--ok-ghost); }
+  .badge.error{ color:var(--err); border-color:rgba(255,107,107,.5); background:var(--err-ghost); }
+  .icon-btn{ background:var(--panel2); color:var(--text); border:1px solid var(--line);
+             border-radius:10px; padding:0; width:32px; height:32px; cursor:pointer;
+             display:inline-flex; align-items:center; justify-content:center; font-size:15px;
+             transition:background .15s, border-color .15s, transform .1s; }
+  .icon-btn:hover{ background:var(--panel3); border-color:var(--accent-line); }
+  .icon-btn:active{ transform:translateY(1px); }
+  .saved-tag{ font:11px var(--sans); color:var(--ok-2); opacity:0; transition:opacity .3s; }
+  .saved-tag.show{ opacity:1; }
+
+  /* ---------------- toolbar ---------------- */
+  #toolbar{ display:flex; align-items:center; gap:8px; padding:8px 16px;
+            background:var(--bg-elev); border-bottom:1px solid var(--line-soft); z-index:25; flex:none; flex-wrap:wrap; }
+  button{ background:var(--accent); color:var(--on-accent); border:0; border-radius:var(--radius-sm);
+          padding:8px 14px; font:600 13px/1 var(--sans); cursor:pointer;
+          display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+          transition:transform .08s, box-shadow .18s, filter .18s; }
+  button:hover:not(:disabled){ filter:brightness(1.07); box-shadow:0 6px 18px var(--accent-line); }
+  button:active:not(:disabled){ transform:translateY(1px); }
+  button:disabled{ opacity:.45; cursor:not-allowed; }
+  button.secondary{ background:var(--panel2); color:var(--text); border:1px solid var(--line); }
+  button.secondary:hover:not(:disabled){ background:var(--panel3); border-color:var(--accent-line); box-shadow:none; filter:none; }
+  button.danger{ background:transparent; color:var(--err); border:1px solid var(--err); }
+  button.danger:hover:not(:disabled){ background:var(--err-ghost); box-shadow:none; filter:none; }
+  #taskInput{ flex:1; min-width:180px; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+              border-radius:var(--radius-sm); padding:8px 12px; font:13px var(--sans); }
+  #taskInput:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ghost); }
+  .tb-sep{ width:1px; height:24px; background:var(--line); margin:0 2px; flex:none; }
+
+  /* ---------------- layout ---------------- */
+  #workspace{ flex:1; display:flex; min-height:0; }
+
+  /* ---------------- canvas ---------------- */
+  #canvas{ flex:1; position:relative; overflow:hidden; cursor:default;
+           background-image:radial-gradient(var(--grid-dot) 1.5px, transparent 1.5px);
+           background-size:26px 26px; touch-action:none; }
+  #canvas.panning{ cursor:grabbing; }
+  #world{ position:absolute; left:0; top:0; transform-origin:0 0; }
+  #wires{ position:absolute; left:0; top:0; width:1px; height:1px; overflow:visible; pointer-events:none; }
+  #wires path.wire{ fill:none; stroke:var(--dim2); stroke-width:2; pointer-events:none; transition:stroke .15s; }
+  #wires path.hit{ fill:none; stroke:transparent; stroke-width:14; pointer-events:stroke; cursor:pointer; }
+  #wires g.sel path.wire{ stroke:var(--accent); stroke-width:2.5; }
+  #wires path.temp{ fill:none; stroke:var(--accent); stroke-width:2; stroke-dasharray:6 5; pointer-events:none; }
+
+  .node{ position:absolute; width:var(--node-w); background:var(--panel); border:1.5px solid var(--line);
+         border-radius:12px; box-shadow:var(--shadow-sm); user-select:none; cursor:grab;
+         transition:border-color .15s, box-shadow .15s; }
+  .node:hover{ border-color:var(--accent-line); }
+  .node.sel{ border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ghost), var(--shadow); }
+  .node:active{ cursor:grabbing; }
+  .node-head{ display:flex; align-items:center; gap:7px; padding:9px 11px 7px; }
+  .node-ico{ font-size:14px; flex:none; }
+  .node-name{ font:700 12.5px/1.25 var(--sans); color:var(--text-strong); overflow:hidden;
+              text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .node-body{ padding:0 11px 9px; display:flex; flex-direction:column; gap:5px; }
+  .node-model{ font:10.5px var(--mono); color:var(--accent-2); background:var(--accent-ghost);
+               border:1px solid var(--accent-line); border-radius:6px; padding:2px 7px;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; align-self:flex-start; }
+  .node.coder .node-model{ color:var(--warn); background:var(--warn-ghost); border-color:var(--warn-line); }
+  .node-traits{ font:10.5px var(--sans); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .port{ position:absolute; width:14px; height:14px; border-radius:50%; top:50%; margin-top:-7px;
+         background:var(--panel3); border:2px solid var(--dim2); cursor:crosshair; z-index:2;
+         transition:background .12s, border-color .12s, transform .12s; }
+  .port:hover{ background:var(--accent); border-color:var(--accent-2); transform:scale(1.25); }
+  .port-in{ left:-8px; } .port-out{ right:-8px; }
+  .node.conn-target{ border-color:var(--ok); box-shadow:0 0 0 3px var(--ok-ghost); }
+
+  /* estados de execução (usados na F2) */
+  .node.running{ border-color:var(--accent); animation:nodePulse 1.2s ease-in-out infinite; }
+  .node.done{ border-color:var(--ok-line); }
+  .node.error{ border-color:var(--err); }
+  .node.skipped{ opacity:.45; }
+  @keyframes nodePulse{ 0%,100%{ box-shadow:0 0 0 3px var(--accent-ghost); } 50%{ box-shadow:0 0 0 7px var(--accent-ghost); } }
+
+  #emptyHint{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+              pointer-events:none; z-index:1; }
+  #emptyHint .inner{ text-align:center; color:var(--dim); }
+  #emptyHint .inner .big{ font:700 17px var(--sans); color:var(--text); margin-bottom:6px; }
+
+  #zoomCtl{ position:absolute; right:14px; bottom:14px; display:flex; flex-direction:column; gap:6px; z-index:10; }
+  #zoomCtl .icon-btn{ box-shadow:var(--shadow-sm); }
+
+  /* ---------------- inspector ---------------- */
+  #inspector{ width:300px; flex:none; background:var(--panel); border-left:1px solid var(--line);
+              padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; }
+  #inspector h2{ margin:0 0 10px; font:600 11.5px/1.5 var(--sans); text-transform:uppercase;
+                 letter-spacing:.13em; color:var(--dim); }
+  #inspector .empty{ color:var(--dim2); font-size:12.5px; margin-top:8px; }
+  label{ font:600 10.5px/1.3 var(--sans); color:var(--dim); display:block; margin:12px 0 4px;
+         text-transform:uppercase; letter-spacing:.08em; }
+  input, select, textarea{ width:100%; background:var(--panel2); color:var(--text);
+    border:1px solid var(--line); border-radius:var(--radius-sm); padding:8px 10px;
+    font:12.5px var(--mono); transition:border-color .15s, box-shadow .15s; }
+  textarea{ resize:vertical; min-height:64px; font-family:var(--sans); }
+  input:focus, select:focus, textarea:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ghost); }
+  .check{ text-transform:none; letter-spacing:0; font:12.5px/1.4 var(--sans); font-weight:500; color:var(--text);
+          display:flex; gap:8px; align-items:center; cursor:pointer; }
+  .check input{ width:auto; accent-color:var(--accent); }
+  #chips{ display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+  .chip{ font:600 11.5px var(--sans); color:var(--dim); background:var(--panel2); border:1px solid var(--line);
+         border-radius:999px; padding:5px 11px; cursor:pointer; user-select:none;
+         transition:color .13s, border-color .13s, background .13s; }
+  .chip:hover{ border-color:var(--accent-line); color:var(--text); }
+  .chip.on{ color:var(--accent-2); border-color:var(--accent-line); background:var(--accent-ghost); }
+  .muted{ color:var(--dim); font-size:11.5px; }
+  details > summary{ cursor:pointer; color:var(--dim); font-size:12px; list-style:none; user-select:none; padding:4px 0; }
+  details > summary::-webkit-details-marker{ display:none; }
+  details > summary::before{ content:"\25B8"; margin-right:6px; display:inline-block; transition:transform .16s; }
+  details[open] > summary::before{ transform:rotate(90deg); }
+  #promptPreview{ background:var(--panel2); border:1px solid var(--line-soft); border-radius:8px;
+                  padding:9px 11px; font:11px/1.6 var(--mono); color:var(--dim); white-space:pre-wrap; margin-top:6px; }
+
+  /* ---------------- toast ---------------- */
+  #toasts{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:100;
+           display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .toast{ background:var(--panel3); color:var(--text-strong); border:1px solid var(--line);
+          border-radius:11px; padding:10px 16px; font:600 12.5px var(--sans); box-shadow:var(--shadow-lg);
+          animation:toastIn .3s cubic-bezier(.2,.9,.3,1.2); }
+  .toast.warn{ border-color:var(--warn-line); color:var(--warn); background:var(--panel); }
+  .toast.err{ border-color:var(--err); color:var(--err); background:var(--panel); }
+  .toast.ok{ border-color:var(--ok-line); color:var(--ok-2); background:var(--panel); }
+  @keyframes toastIn{ from{ transform:translateY(14px); opacity:0; } to{ transform:none; opacity:1; } }
+
+  .hidden{ display:none !important; }
+  .theme-switching, .theme-switching *{ transition:none !important; }
+  @keyframes pulse{ 0%,100%{ opacity:1; } 50%{ opacity:.4; } }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+  .spinner{ display:inline-block; width:14px; height:14px; border:2.5px solid var(--accent-ghost);
+            border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; }
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important;
+      transition-duration:.001ms !important; }
+  }
+</style>
+<script>(function(){try{var t=localStorage.getItem('zflow-theme');if(!t){t=(window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches)?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();</script>
 <link rel="icon" type="image/png" href="/favicon.png">
 </head>
 <body>
-<h1>ZayderFlow</h1>
-<p>Esqueleto no ar — o editor visual chega na F1.</p>
+
+<header>
+  <span class="brand">
+    <img class="logo" src="/logo.png" alt="">
+    <span class="wordmark"><span class="wm-1">Zayder</span><span class="wm-2">Flow</span></span>
+  </span>
+  <input id="graphName" title="nome do fluxo" spellcheck="false">
+  <span id="savedTag" class="saved-tag">✔ salvo</span>
+  <span class="grow"></span>
+  <span id="phaseBadge" class="badge">pronto</span>
+  <span id="cost" class="hidden"></span>
+  <span id="savings" class="savings hidden"></span>
+  <button id="themeBtn" class="icon-btn" title="alternar tema">◐</button>
+</header>
+
+<div id="toolbar">
+  <button id="addTextBtn" class="secondary" title="agente que pensa e escreve (não mexe em arquivos)">🧠 Agente de texto</button>
+  <button id="addCoderBtn" class="secondary" title="agente que edita arquivos do projeto via Aider">🛠️ Agente codador</button>
+  <button id="tplBtn" class="secondary" title="arquiteturas prontas para arrastar e ajustar">📚 Templates</button>
+  <span class="tb-sep"></span>
+  <input id="taskInput" placeholder="Qual é a tarefa? ex.: Avalie esta ideia de produto: ...">
+  <button id="runBtn" disabled title="execução chega na próxima etapa">▶ Rodar</button>
+</div>
+
+<div id="workspace">
+  <div id="canvas">
+    <div id="emptyHint">
+      <div class="inner">
+        <div class="big">Canvas vazio</div>
+        <div>Adicione um 🧠 agente de texto na barra acima, ou carregue um 📚 template.<br>
+        Arraste do círculo direito de um nó até outro nó para ligar uma seta.</div>
+      </div>
+    </div>
+    <div id="world">
+      <svg id="wires"></svg>
+    </div>
+    <div id="zoomCtl">
+      <button class="icon-btn" id="zoomIn" title="aproximar">+</button>
+      <button class="icon-btn" id="zoomOut" title="afastar">−</button>
+      <button class="icon-btn" id="zoomFit" title="enquadrar tudo">⛶</button>
+    </div>
+  </div>
+  <aside id="inspector">
+    <h2>Propriedades</h2>
+    <div id="inspBody"><div class="empty">Selecione um agente ou uma seta para editar.<br><br>
+      Dicas:<br>• arraste o fundo para mover a vista<br>• Ctrl+rolagem para zoom<br>• Delete apaga a seleção</div></div>
+  </aside>
+</div>
+
+<div id="toasts"></div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ================= estado ================= */
+let graph = { name: "sem título", nodes: [], edges: [], max_rounds: 1, cost_ceiling_usd: 2.0, approve_coder: true };
+let view = { panX: 60, panY: 40, zoom: 1 };
+let sel = null;              // {type:"node"|"edge", id}
+let traitsCatalog = [];      // [{key,label,prompt}]
+let modelsCatalog = [];
+let running = false;
+
+const NS = "http://www.w3.org/2000/svg";
+const world = $("world"), wires = $("wires"), canvas = $("canvas");
+const nodeEls = new Map();   // id -> div
+const edgeEls = new Map();   // id -> {g, wire, hit}
+
+/* ================= util ================= */
+function toast(msg, cls) {
+  const t = document.createElement("div");
+  t.className = "toast" + (cls ? " " + cls : "");
+  t.textContent = msg;
+  $("toasts").appendChild(t);
+  setTimeout(() => { t.style.opacity = "0"; t.style.transition = "opacity .4s"; setTimeout(() => t.remove(), 450); }, 3200);
+}
+function nodeById(id) { return graph.nodes.find(n => n.id === id); }
+function edgeById(id) { return graph.edges.find(e => e.id === id); }
+function freshId(prefix, list) {
+  let mx = 0;
+  for (const it of list) { const m = /^\w?(\d+)$/.exec(it.id.replace(prefix, "")); if (m) mx = Math.max(mx, +m[1]); const m2 = /(\d+)$/.exec(it.id); if (m2) mx = Math.max(mx, +m2[1]); }
+  return prefix + (mx + 1);
+}
+function clientToWorld(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (cx - r.left - view.panX) / view.zoom, y: (cy - r.top - view.panY) / view.zoom };
+}
+function makesCycle(src, dst) {
+  // já existe caminho dst -> src? então src->dst fecha ciclo
+  const adj = {};
+  for (const e of graph.edges) (adj[e.source] = adj[e.source] || []).push(e.target);
+  const seen = new Set(); const stack = [dst];
+  while (stack.length) {
+    const cur = stack.pop();
+    if (cur === src) return true;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    for (const nx of (adj[cur] || [])) stack.push(nx);
+  }
+  return false;
+}
+
+/* ================= autosave ================= */
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveNow, 800);
+}
+async function saveNow() {
+  clearTimeout(saveTimer); saveTimer = null;
+  try {
+    const r = await fetch("/api/graph", { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ graph }) });
+    if (r.ok) {
+      const tag = $("savedTag");
+      tag.classList.add("show");
+      setTimeout(() => tag.classList.remove("show"), 1400);
+    } else if (r.status !== 409) {
+      const d = await r.json().catch(() => ({}));
+      toast("não salvou: " + (d.detail || r.status), "err");
+    }
+  } catch (e) { /* servidor caiu; tenta de novo no próximo save */ }
+}
+
+/* ================= transform / zoom / pan ================= */
+function applyView() {
+  world.style.transform = `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`;
+}
+function setZoom(z, cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  const mx = (cx ?? r.left + r.width / 2) - r.left, my = (cy ?? r.top + r.height / 2) - r.top;
+  const nz = Math.min(1.5, Math.max(0.4, z));
+  view.panX = mx - (mx - view.panX) * (nz / view.zoom);
+  view.panY = my - (my - view.panY) * (nz / view.zoom);
+  view.zoom = nz;
+  applyView();
+}
+$("zoomIn").onclick = () => setZoom(view.zoom * 1.2);
+$("zoomOut").onclick = () => setZoom(view.zoom / 1.2);
+$("zoomFit").onclick = fitView;
+canvas.addEventListener("wheel", (e) => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  setZoom(view.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX, e.clientY);
+}, { passive: false });
+
+function fitView() {
+  if (!graph.nodes.length) { view = { panX: 60, panY: 40, zoom: 1 }; applyView(); return; }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const n of graph.nodes) {
+    const el = nodeEls.get(n.id);
+    const w = el ? el.offsetWidth : 196, h = el ? el.offsetHeight : 90;
+    x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+    x1 = Math.max(x1, n.x + w); y1 = Math.max(y1, n.y + h);
+  }
+  const r = canvas.getBoundingClientRect(), pad = 60;
+  const z = Math.min(1.25, Math.max(0.4, Math.min((r.width - pad * 2) / (x1 - x0 || 1), (r.height - pad * 2) / (y1 - y0 || 1))));
+  view.zoom = z;
+  view.panX = (r.width - (x1 - x0) * z) / 2 - x0 * z;
+  view.panY = (r.height - (y1 - y0) * z) / 2 - y0 * z;
+  applyView();
+}
+
+/* ================= render de nós ================= */
+const NODE_ICO = { text: "🧠", coder: "🛠️" };
+function traitsSummary(n) {
+  if (!n.traits.length) return "sem personalidade definida";
+  const lbl = {}; for (const t of traitsCatalog) lbl[t.key] = t.label;
+  return n.traits.map(k => lbl[k] || k).join(" · ");
+}
+function renderNode(n) {
+  let el = nodeEls.get(n.id);
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "node";
+    el.dataset.id = n.id;
+    el.innerHTML = `
+      <div class="node-head"><span class="node-ico"></span><span class="node-name"></span></div>
+      <div class="node-body"><span class="node-model"></span><span class="node-traits"></span></div>
+      <div class="port port-in" title="entrada"></div>
+      <div class="port port-out" title="saída — arraste até outro nó"></div>`;
+    world.appendChild(el);
+    nodeEls.set(n.id, el);
+    wireNodeEvents(el);
+  }
+  el.classList.toggle("coder", n.type === "coder");
+  el.classList.toggle("sel", !!(sel && sel.type === "node" && sel.id === n.id));
+  el.style.left = n.x + "px";
+  el.style.top = n.y + "px";
+  el.querySelector(".node-ico").textContent = NODE_ICO[n.type] || "🧠";
+  el.querySelector(".node-name").textContent = n.name;
+  el.querySelector(".node-model").textContent = (n.model || "").split("/").pop();
+  el.querySelector(".node-traits").textContent = traitsSummary(n);
+}
+function renderNodes() {
+  for (const [id, el] of [...nodeEls]) {
+    if (!nodeById(id)) { el.remove(); nodeEls.delete(id); }
+  }
+  for (const n of graph.nodes) renderNode(n);
+  $("emptyHint").classList.toggle("hidden", graph.nodes.length > 0);
+}
+
+/* ================= render de setas ================= */
+function anchors(e) {
+  const s = nodeById(e.source), t = nodeById(e.target);
+  const se = nodeEls.get(e.source), te = nodeEls.get(e.target);
+  const sw = se ? se.offsetWidth : 196, sh = se ? se.offsetHeight : 90;
+  const th = te ? te.offsetHeight : 90;
+  return { x1: s.x + sw, y1: s.y + sh / 2, x2: t.x, y2: t.y + th / 2 };
+}
+function bezier(x1, y1, x2, y2) {
+  const d = Math.min(120, Math.max(40, Math.abs(x2 - x1) / 2));
+  return `M ${x1} ${y1} C ${x1 + d} ${y1}, ${x2 - d} ${y2}, ${x2} ${y2}`;
+}
+function ensureMarker() {
+  if (wires.querySelector("defs")) return;
+  const defs = document.createElementNS(NS, "defs");
+  defs.innerHTML = `<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+    <path d="M 0 1 L 9 5 L 0 9 z" fill="context-stroke"></path></marker>`;
+  wires.appendChild(defs);
+}
+function renderEdge(e) {
+  let rec = edgeEls.get(e.id);
+  if (!rec) {
+    const g = document.createElementNS(NS, "g");
+    const wire = document.createElementNS(NS, "path");
+    wire.setAttribute("class", "wire");
+    wire.setAttribute("marker-end", "url(#arrow)");
+    const hit = document.createElementNS(NS, "path");
+    hit.setAttribute("class", "hit");
+    hit.addEventListener("pointerdown", (ev) => { ev.stopPropagation(); select({ type: "edge", id: e.id }); });
+    g.appendChild(hit); g.appendChild(wire);
+    wires.appendChild(g);
+    rec = { g, wire, hit };
+    edgeEls.set(e.id, rec);
+  }
+  const a = anchors(e);
+  const d = bezier(a.x1, a.y1, a.x2, a.y2);
+  rec.wire.setAttribute("d", d);
+  rec.hit.setAttribute("d", d);
+  rec.g.classList.toggle("sel", !!(sel && sel.type === "edge" && sel.id === e.id));
+}
+function renderEdges() {
+  ensureMarker();
+  for (const [id, rec] of [...edgeEls]) {
+    if (!edgeById(id)) { rec.g.remove(); edgeEls.delete(id); }
+  }
+  for (const e of graph.edges) renderEdge(e);
+}
+function renderEdgesOf(nodeId) {
+  for (const e of graph.edges) if (e.source === nodeId || e.target === nodeId) renderEdge(e);
+}
+function renderAll() { renderNodes(); renderEdges(); }
+
+/* ================= interação: drag de nó + criar seta ================= */
+function wireNodeEvents(el) {
+  el.addEventListener("pointerdown", (ev) => {
+    if (running) return;
+    const id = el.dataset.id;
+    if (ev.target.classList.contains("port-out")) { startConnect(ev, id); return; }
+    if (ev.target.classList.contains("port-in")) return;
+    ev.stopPropagation();
+    select({ type: "node", id });
+    const n = nodeById(id);
+    const start = { px: ev.clientX, py: ev.clientY, x: n.x, y: n.y };
+    el.setPointerCapture(ev.pointerId);
+    let moved = false;
+    const onMove = (e2) => {
+      const dx = (e2.clientX - start.px) / view.zoom, dy = (e2.clientY - start.py) / view.zoom;
+      if (Math.abs(dx) + Math.abs(dy) > 1) moved = true;
+      n.x = Math.round(start.x + dx); n.y = Math.round(start.y + dy);
+      el.style.left = n.x + "px"; el.style.top = n.y + "px";
+      renderEdgesOf(id);
+    };
+    const onUp = () => {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      if (moved) scheduleSave();
+    };
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+  });
+}
+
+let tempPath = null;
+function startConnect(ev, srcId) {
+  ev.stopPropagation(); ev.preventDefault();
+  ensureMarker();
+  tempPath = document.createElementNS(NS, "path");
+  tempPath.setAttribute("class", "temp");
+  tempPath.setAttribute("marker-end", "url(#arrow)");
+  wires.appendChild(tempPath);
+  const srcEl = nodeEls.get(srcId), srcN = nodeById(srcId);
+  const x1 = srcN.x + srcEl.offsetWidth, y1 = srcN.y + srcEl.offsetHeight / 2;
+  let hoverEl = null;
+  const onMove = (e2) => {
+    const w = clientToWorld(e2.clientX, e2.clientY);
+    tempPath.setAttribute("d", bezier(x1, y1, w.x, w.y));
+    const under = document.elementFromPoint(e2.clientX, e2.clientY);
+    const nd = under && under.closest ? under.closest(".node") : null;
+    if (hoverEl && hoverEl !== nd) hoverEl.classList.remove("conn-target");
+    hoverEl = (nd && nd.dataset.id !== srcId) ? nd : null;
+    if (hoverEl) hoverEl.classList.add("conn-target");
+  };
+  const onUp = (e2) => {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("keydown", onKey);
+    tempPath.remove(); tempPath = null;
+    if (hoverEl) {
+      hoverEl.classList.remove("conn-target");
+      addEdge(srcId, hoverEl.dataset.id);
+    }
+  };
+  const onKey = (e2) => { if (e2.key === "Escape") { onUp(e2); } };
+  document.addEventListener("pointermove", onMove);
+  document.addEventListener("pointerup", onUp);
+  document.addEventListener("keydown", onKey);
+}
+
+function addEdge(src, dst) {
+  if (src === dst) return;
+  if (graph.edges.some(e => e.source === src && e.target === dst)) { toast("essa seta já existe", "warn"); return; }
+  if (makesCycle(src, dst)) {
+    toast("essa seta fecharia um ciclo — ciclos ainda não são suportados", "warn");
+    return;
+  }
+  const e = { id: freshId("e", graph.edges), source: src, target: dst, label: "", kind: "normal" };
+  graph.edges.push(e);
+  renderEdges();
+  select({ type: "edge", id: e.id });
+  scheduleSave();
+}
+
+/* ================= pan no fundo ================= */
+canvas.addEventListener("pointerdown", (ev) => {
+  if (ev.target !== canvas && ev.target !== world && ev.target !== wires && !ev.target.closest("#emptyHint")) return;
+  select(null);
+  canvas.classList.add("panning");
+  const start = { px: ev.clientX, py: ev.clientY, x: view.panX, y: view.panY };
+  canvas.setPointerCapture(ev.pointerId);
+  const onMove = (e2) => {
+    view.panX = start.x + (e2.clientX - start.px);
+    view.panY = start.y + (e2.clientY - start.py);
+    applyView();
+  };
+  const onUp = () => {
+    canvas.classList.remove("panning");
+    canvas.removeEventListener("pointermove", onMove);
+    canvas.removeEventListener("pointerup", onUp);
+  };
+  canvas.addEventListener("pointermove", onMove);
+  canvas.addEventListener("pointerup", onUp);
+});
+
+/* ================= adicionar / remover nós ================= */
+function addNode(type) {
+  const r = canvas.getBoundingClientRect();
+  const c = clientToWorld(r.left + r.width * 0.42 + Math.random() * 60, r.top + r.height * 0.4 + Math.random() * 60);
+  const n = {
+    id: freshId("n", graph.nodes),
+    type,
+    name: type === "coder" ? "Codador" : "Agente",
+    model: "deepseek/deepseek-v4-flash",
+    traits: [], extra_prompt: "", include_task: true,
+    x: Math.round(c.x), y: Math.round(c.y), files: [],
+  };
+  graph.nodes.push(n);
+  renderNodes();
+  select({ type: "node", id: n.id });
+  scheduleSave();
+}
+$("addTextBtn").onclick = () => addNode("text");
+$("addCoderBtn").onclick = () => addNode("coder");
+$("tplBtn").onclick = () => toast("templates chegam na F3", "warn");
+
+function deleteSelection() {
+  if (!sel) return;
+  if (sel.type === "node") {
+    graph.edges = graph.edges.filter(e => e.source !== sel.id && e.target !== sel.id);
+    graph.nodes = graph.nodes.filter(n => n.id !== sel.id);
+  } else {
+    graph.edges = graph.edges.filter(e => e.id !== sel.id);
+  }
+  select(null);
+  renderAll();
+  scheduleSave();
+}
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Delete" && e.key !== "Backspace") return;
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT")) return;
+  if (e.key === "Backspace") return; // só Delete apaga, Backspace é perigoso demais
+  deleteSelection();
+});
+
+/* ================= seleção + inspector ================= */
+function select(s) {
+  sel = s;
+  for (const [id, el] of nodeEls) el.classList.toggle("sel", !!(s && s.type === "node" && s.id === id));
+  for (const [id, rec] of edgeEls) rec.g.classList.toggle("sel", !!(s && s.type === "edge" && s.id === id));
+  renderInspector();
+}
+
+function renderInspector() {
+  const box = $("inspBody");
+  if (!sel) {
+    box.innerHTML = `<div class="empty">Selecione um agente ou uma seta para editar.<br><br>
+      Dicas:<br>• arraste o fundo para mover a vista<br>• Ctrl+rolagem para zoom<br>• Delete apaga a seleção</div>`;
+    return;
+  }
+  if (sel.type === "edge") {
+    const e = edgeById(sel.id);
+    if (!e) { select(null); return; }
+    const from = nodeById(e.source), to = nodeById(e.target);
+    box.innerHTML = `
+      <div class="muted">Seta: <b>${esc(from.name)}</b> → <b>${esc(to.name)}</b></div>
+      <label>Rótulo (só visual)</label>
+      <input id="i_label" value="${esc(e.label)}" placeholder="ex.: parecer">
+      <label></label>
+      <button class="danger" id="i_delEdge">🗑 Apagar seta</button>`;
+    $("i_label").oninput = (ev) => { e.label = ev.target.value; scheduleSave(); };
+    $("i_delEdge").onclick = deleteSelection;
+    return;
+  }
+  const n = nodeById(sel.id);
+  if (!n) { select(null); return; }
+  const modelOpts = modelsCatalog.map(m => `<option value="${esc(m)}"></option>`).join("");
+  const chips = traitsCatalog.map(t =>
+    `<span class="chip${n.traits.includes(t.key) ? " on" : ""}" data-k="${esc(t.key)}" title="${esc(t.prompt)}">${esc(t.label)}</span>`).join("");
+  box.innerHTML = `
+    <div class="muted">${NODE_ICO[n.type]} ${n.type === "coder" ? "Agente codador — edita arquivos via Aider" : "Agente de texto — pensa e escreve"}</div>
+    <label>Nome do personagem</label>
+    <input id="i_name" value="${esc(n.name)}" spellcheck="false">
+    <label>Modelo (formato litellm: provedor/modelo)</label>
+    <input id="i_model" value="${esc(n.model)}" list="dl_models" spellcheck="false">
+    <datalist id="dl_models">${modelOpts}</datalist>
+    <label>Personalidade</label>
+    <div id="chips">${chips}</div>
+    <label>Instruções extras</label>
+    <textarea id="i_extra" placeholder="ex.: Produza um parecer único e final.">${esc(n.extra_prompt)}</textarea>
+    ${n.type === "coder" ? `
+    <label>Arquivos-alvo (um por linha, opcional)</label>
+    <textarea id="i_files" placeholder="ex.: app/main.py">${esc(n.files.join("\n"))}</textarea>` : ""}
+    <label class="check" style="margin-top:14px"><input type="checkbox" id="i_task" ${n.include_task ? "checked" : ""}> recebe a tarefa original</label>
+    <details style="margin-top:12px"><summary>ver prompt final</summary><div id="promptPreview"></div></details>
+    <label></label>
+    <button class="danger" id="i_delNode">🗑 Apagar agente</button>`;
+
+  const upd = () => { renderNode(n); renderEdgesOf(n.id); updatePromptPreview(n); scheduleSave(); };
+  $("i_name").oninput = (ev) => { n.name = ev.target.value || "Agente"; upd(); };
+  $("i_model").oninput = (ev) => { n.model = ev.target.value; upd(); };
+  $("i_extra").oninput = (ev) => { n.extra_prompt = ev.target.value; updatePromptPreview(n); scheduleSave(); };
+  const filesEl = $("i_files");
+  if (filesEl) filesEl.oninput = (ev) => { n.files = ev.target.value.split("\n").map(s => s.trim()).filter(Boolean); scheduleSave(); };
+  $("i_task").onchange = (ev) => { n.include_task = ev.target.checked; scheduleSave(); };
+  $("i_delNode").onclick = deleteSelection;
+  box.querySelectorAll(".chip").forEach(ch => {
+    ch.onclick = () => {
+      const k = ch.dataset.k;
+      const i = n.traits.indexOf(k);
+      if (i >= 0) n.traits.splice(i, 1); else n.traits.push(k);
+      ch.classList.toggle("on", i < 0);
+      upd();
+    };
+  });
+  updatePromptPreview(n);
+}
+
+function updatePromptPreview(n) {
+  const el = $("promptPreview");
+  if (!el) return;
+  const byKey = {}; for (const t of traitsCatalog) byKey[t.key] = t.prompt;
+  const parts = [`Você é "${n.name}", um agente num fluxo com vários agentes de IA.`];
+  for (const k of n.traits) if (byKey[k]) parts.push(byKey[k]);
+  if (n.extra_prompt.trim()) parts.push(n.extra_prompt.trim());
+  parts.push("Você receberá uma tarefa e, possivelmente, mensagens de outros agentes. Responda em português. Emita SOMENTE a sua contribuição, sem repetir as mensagens recebidas.");
+  el.textContent = parts.join("\n");
+}
+
+/* ================= nome do fluxo ================= */
+$("graphName").addEventListener("input", (ev) => { graph.name = ev.target.value || "sem título"; scheduleSave(); });
+
+/* ================= tema ================= */
+$("themeBtn").onclick = () => {
+  const cur = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+  document.documentElement.classList.add("theme-switching");
+  document.documentElement.setAttribute("data-theme", cur);
+  try { localStorage.setItem("zflow-theme", cur); } catch (e) {}
+  setTimeout(() => document.documentElement.classList.remove("theme-switching"), 80);
+};
+
+/* ================= boot ================= */
+async function boot() {
+  try {
+    const [gr, tr, mo] = await Promise.all([
+      fetch("/api/graph").then(r => r.json()),
+      fetch("/api/traits").then(r => r.json()),
+      fetch("/api/models").then(r => r.json()),
+    ]);
+    graph = gr;
+    traitsCatalog = tr;
+    modelsCatalog = mo.models || [];
+  } catch (e) {
+    toast("não consegui falar com o servidor", "err");
+  }
+  $("graphName").value = graph.name || "sem título";
+  applyView();
+  renderAll();
+  if (graph.nodes.length) fitView();
+}
+boot();
+</script>
 </body>
 </html>
