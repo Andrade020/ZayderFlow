@@ -292,6 +292,9 @@
   <button id="addTextBtn" class="secondary" title="agente que pensa e escreve (não mexe em arquivos)">🧠 Agente de texto</button>
   <button id="addCoderBtn" class="secondary" title="agente que edita arquivos do projeto via Aider">🛠️ Agente codador</button>
   <button id="tplBtn" class="secondary" title="arquiteturas prontas para arrastar e ajustar">📚 Templates</button>
+  <button id="exportBtn" class="icon-btn" title="baixar o fluxo como JSON">⤓</button>
+  <button id="importBtn" class="icon-btn" title="importar um fluxo de um arquivo JSON">⤒</button>
+  <input type="file" id="importFile" accept=".json,application/json" class="hidden">
   <span class="tb-sep"></span>
   <input id="taskInput" placeholder="Qual é a tarefa? ex.: Avalie esta ideia de produto: ...">
   <button id="runBtn">▶ Rodar</button>
@@ -673,6 +676,35 @@ function addNode(type) {
 }
 $("addTextBtn").onclick = () => addNode("text");
 $("addCoderBtn").onclick = () => addNode("coder");
+
+/* ================= export / import ================= */
+$("exportBtn").onclick = () => {
+  const blob = new Blob([JSON.stringify(graph, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "zayderflow-" + (graph.name || "fluxo").replace(/[^\w\-]+/g, "-") + ".json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$("importBtn").onclick = () => $("importFile").click();
+$("importFile").onchange = async (ev) => {
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    delete data.template_id; delete data.description;
+    if (!Array.isArray(data.nodes)) throw new Error("sem lista de nós");
+    if (graph.nodes.length && !confirm("Importar substitui o fluxo atual. Continuar?")) return;
+    graph = Object.assign({ name: "importado", edges: [], max_rounds: 1, cost_ceiling_usd: 2.0, approve_coder: true }, data);
+    $("graphName").value = graph.name;
+    select(null);
+    renderAll();
+    fitView();
+    await saveNow();
+    toast("fluxo importado", "ok");
+  } catch (e) { toast("arquivo inválido: " + e.message, "err"); }
+};
 
 /* ================= galeria de templates ================= */
 $("tplBtn").onclick = async () => {

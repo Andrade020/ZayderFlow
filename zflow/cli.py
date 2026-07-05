@@ -46,6 +46,57 @@ def cmd_ui(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    """Roda um grafo sem UI (bom para scripts e testes de fumaça)."""
+    import json
+    from pathlib import Path
+
+    from .executor import GraphExecutor
+    from .models import Graph
+    from .store import load_graph
+
+    load_api_keys()
+    settings = load_settings(args.dir)
+    if args.graph:
+        data = json.loads(Path(args.graph).read_text(encoding="utf-8-sig"))
+        data.pop("template_id", None)
+        data.pop("description", None)
+        graph = Graph.model_validate(data)
+    else:
+        graph = load_graph(settings.resolved_project_dir())
+
+    def emit(kind: str, **d) -> None:
+        if kind == "node_start":
+            print(f"  … {d['name']} pensando ({d['model']})")
+        elif kind == "node_output":
+            print(f"  ok {d['name']}  ({d['tokens_out']} tokens, ${d['cost_usd']:.4f})")
+        elif kind == "node_error":
+            print(f"  ERRO {d['name']}: {d['error']}")
+        elif kind == "node_skipped":
+            print(f"  -- {d['name']}: {d.get('reason', 'pulado')}")
+        elif kind == "ceiling":
+            print(f"  teto de custo atingido (${d['cost_usd']:.4f})")
+
+    def gate(message: str) -> str:
+        if args.yes:
+            return "approve"
+        ans = input(f"{message} [s = aprovar / p = pular / a = abortar] ").strip().lower()
+        return {"s": "approve", "p": "skip", "a": "abort"}.get(ans, "skip")
+
+    executor = GraphExecutor(graph, settings, emit=emit, gate=gate)
+    try:
+        report = executor.run(args.task)
+    except ValueError as exc:
+        print(f"erro: {exc}")
+        return 2
+    print(f"\ncusto total: ${report.cost_usd_total:.4f}")
+    for nid, out in report.outputs.items():
+        node = graph.node(nid)
+        header = f"--- {node.name} ---"
+        print(f"\n{header}\n{out.text or out.error}")
+    return 0 if report.completed else 1
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     applied = load_api_keys()
     import os
@@ -66,6 +117,13 @@ def main(argv: list[str] | None = None) -> int:
     p_ui.add_argument("--port", type=int, default=8430)
     p_ui.add_argument("--no-browser", action="store_true")
     p_ui.set_defaults(func=cmd_ui)
+
+    p_run = sub.add_parser("run", help="roda um grafo sem abrir a UI")
+    p_run.add_argument("--task", required=True, help="a tarefa a executar")
+    p_run.add_argument("--graph", default=None, help="arquivo JSON do grafo (default: .zflow/graph.json)")
+    p_run.add_argument("--dir", default=".", help="diretório do projeto")
+    p_run.add_argument("--yes", action="store_true", help="aprova nós codadores sem perguntar")
+    p_run.set_defaults(func=cmd_run)
 
     p_doc = sub.add_parser("doctor", help="checa chaves e ambiente")
     p_doc.set_defaults(func=cmd_doctor)
