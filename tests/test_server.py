@@ -171,8 +171,28 @@ def test_reset_after_done(client, diamond_graph):
     _put_graph(client, diamond_graph)
     client.post("/api/run", json={"task": "t"})
     wait_phase(client, "done")
+    seq_before = client.get("/api/state").json()["seq"]
     assert client.post("/api/reset").json()["ok"]
     st = client.get("/api/state").json()
-    assert st["phase"] == "idle" and st["seq"] == 0 and st["node_status"] == {}
+    assert st["phase"] == "idle" and st["node_status"] == {} and st["events"] == []
+    # o seq NUNCA volta pra trás: o cliente guarda lastSeq e filtraria os
+    # eventos da próxima execução para sempre (regressão: feed "travado")
+    assert st["seq"] >= seq_before
     # o grafo continua lá
     assert len(st["graph"]["nodes"]) == 4
+
+
+def test_events_after_reset_are_visible_to_stale_client(client, diamond_graph):
+    """Regressão: cliente que viu seq=N antes do reset precisa receber os
+    eventos da execução seguinte pedindo since=N."""
+    _put_graph(client, diamond_graph)
+    client.post("/api/run", json={"task": "t"})
+    wait_phase(client, "done")
+    last_seq = client.get("/api/state").json()["seq"]
+    client.post("/api/reset")
+    client.post("/api/run", json={"task": "t2"})
+    wait_phase(client, "done")
+    events = client.get(f"/api/state?since={last_seq}").json()["events"]
+    kinds = [e["kind"] for e in events]
+    assert "run_start" in kinds and "run_done" in kinds
+    assert kinds.count("node_output") == 4

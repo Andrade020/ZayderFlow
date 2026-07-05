@@ -165,7 +165,9 @@ class FlowManager:
         self.report = None
         self.node_status = {}
         with self.lock:
-            self.seq = 0
+            # self.seq NÃO reseta: o cliente guarda lastSeq e filtra por
+            # seq > since — se o contador voltasse a 0, os eventos da próxima
+            # execução ficariam invisíveis para sempre (feed "travado")
             self.events = []
             self.tokens_in = 0
             self.tokens_out = 0

@@ -866,13 +866,14 @@ $("runBtn").onclick = async () => {
   if (!task) { toast("descreva a tarefa antes de rodar", "warn"); $("taskInput").focus(); return; }
   await saveNow();  // garante que o servidor tem o grafo mais recente
   clearFeed();
-  const r = await post("/api/run", { task });
-  if (r) { lastSeq = 0; }
+  // lastSeq NÃO é zerado aqui: o seq do servidor é monotônico e zerar criaria
+  // corrida com ticks em voo (eventos pulados = feed "travado" na 1ª camada)
+  await post("/api/run", { task });
 };
 $("abortBtn").onclick = () => post("/api/abort");
 $("resetBtn").onclick = async () => {
   const r = await post("/api/reset");
-  if (r) { lastSeq = 0; clearFeed(); applyStatuses({}); }
+  if (r) { clearFeed(); applyStatuses({}); }
 };
 $("apYes").onclick = () => post("/api/approve", { decision: "approve" });
 $("apSkip").onclick = () => post("/api/approve", { decision: "skip" });
@@ -988,14 +989,24 @@ world.addEventListener("dblclick", (ev) => {
 /* ---- polling ---- */
 const PHASE_LABEL = { idle: "pronto", running: "rodando", waiting_approval: "aguardando você",
                       done: "concluído", error: "erro" };
+let tickBusy = false;
 async function tick() {
+  if (tickBusy) return;  // single-flight: dois ticks concorrentes duplicam/pulam eventos
+  tickBusy = true;
+  try { await doTick(); } finally { tickBusy = false; }
+}
+async function doTick() {
   let data;
   try {
     const r = await fetch("/api/state?since=" + lastSeq);
     data = await r.json();
   } catch (e) { return; }
   st = data;
-  for (const ev of st.events) { handleEvent(ev); lastSeq = Math.max(lastSeq, ev.seq); }
+  for (const ev of st.events) {
+    if (ev.seq <= lastSeq) continue;  // nunca reprocessa (feed duplicado/fora de ordem)
+    handleEvent(ev);
+    lastSeq = ev.seq;
+  }
   lastSeq = Math.max(lastSeq, st.seq);
 
   const busy = st.phase === "running" || st.phase === "waiting_approval";
