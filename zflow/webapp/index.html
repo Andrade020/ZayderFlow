@@ -231,6 +231,22 @@
   #drawerBody{ flex:1; overflow:auto; padding:16px 18px; font:13px/1.7 var(--sans);
                white-space:pre-wrap; color:var(--text); }
 
+  /* ---------------- galeria de templates ---------------- */
+  #tplWrap{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:80;
+            display:flex; align-items:center; justify-content:center; }
+  #tplModal{ width:min(680px, 92vw); max-height:80vh; overflow-y:auto; background:var(--panel);
+             border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:var(--shadow-lg);
+             animation:toastIn .25s cubic-bezier(.2,.9,.3,1.1); }
+  #tplModal h2{ margin:0 0 4px; font:700 17px var(--sans); color:var(--text-strong); }
+  #tplModal .sub{ color:var(--dim); font-size:12.5px; margin:0 0 16px; }
+  .tplcard{ border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px;
+            cursor:pointer; background:var(--panel2); transition:border-color .15s, transform .12s, box-shadow .15s; }
+  .tplcard:hover{ border-color:var(--accent-line); transform:translateY(-1px); box-shadow:var(--shadow-sm); }
+  .tplcard b{ font:700 13.5px var(--sans); color:var(--text-strong); display:flex; gap:8px; align-items:center; }
+  .tplcard .cnt{ font:600 10.5px var(--mono); color:var(--accent-2); background:var(--accent-ghost);
+                 border:1px solid var(--accent-line); border-radius:999px; padding:2px 8px; }
+  .tplcard p{ margin:6px 0 0; font:12.5px/1.5 var(--sans); color:var(--dim); }
+
   /* ---------------- toast ---------------- */
   #toasts{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:100;
            display:flex; flex-direction:column; gap:8px; align-items:center; }
@@ -316,6 +332,14 @@
 </div>
 
 <div id="toasts"></div>
+
+<div id="tplWrap" class="hidden">
+  <div id="tplModal">
+    <h2>📚 Templates</h2>
+    <p class="sub">Arquiteturas prontas — carregue uma e ajuste como quiser. Carregar substitui o fluxo atual.</p>
+    <div id="tplList"></div>
+  </div>
+</div>
 
 <div id="drawerWrap" class="hidden">
   <div id="drawer">
@@ -649,7 +673,35 @@ function addNode(type) {
 }
 $("addTextBtn").onclick = () => addNode("text");
 $("addCoderBtn").onclick = () => addNode("coder");
-$("tplBtn").onclick = () => toast("templates chegam na F3", "warn");
+
+/* ================= galeria de templates ================= */
+$("tplBtn").onclick = async () => {
+  let items;
+  try { items = await fetch("/api/templates").then(r => r.json()); }
+  catch (e) { toast("não consegui buscar os templates", "err"); return; }
+  $("tplList").innerHTML = items.map(t => `
+    <div class="tplcard" data-id="${esc(t.id)}">
+      <b>${t.has_coder ? "🛠️" : "🧠"} ${esc(t.name)} <span class="cnt">${t.nodes} agentes</span></b>
+      <p>${esc(t.description)}</p>
+    </div>`).join("");
+  $("tplList").querySelectorAll(".tplcard").forEach(card => {
+    card.onclick = async () => {
+      if (graph.nodes.length && !confirm("Carregar o template substitui o fluxo atual. Continuar?")) return;
+      const r = await post("/api/templates/" + card.dataset.id + "/load");
+      if (!r) return;
+      graph = r;
+      $("graphName").value = graph.name || "sem título";
+      select(null);
+      renderAll();
+      fitView();
+      $("tplWrap").classList.add("hidden");
+      toast("template carregado — ajuste e rode", "ok");
+    };
+  });
+  $("tplWrap").classList.remove("hidden");
+};
+$("tplWrap").addEventListener("pointerdown", (ev) => { if (ev.target === $("tplWrap")) $("tplWrap").classList.add("hidden"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("tplWrap").classList.add("hidden"); });
 
 function deleteSelection() {
   if (!sel) return;

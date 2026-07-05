@@ -1,0 +1,28 @@
+{
+  "template_id": "evolutivo",
+  "name": "Evolutivo (2 gerações)",
+  "description": "Três Geradores produzem variações independentes; um Avaliador seleciona a melhor e lista melhorias; um Refinador produz a versão melhorada; um Avaliador Final dá o veredito. (A versão com loop de N gerações vem numa atualização.)",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Gerador Conservador", "model": "deepseek/deepseek-v4-flash", "traits": ["criterioso"],
+     "extra_prompt": "Produza UMA solução completa para a tarefa, priorizando o que é comprovado e seguro.", "x": 60, "y": 80},
+    {"id": "n2", "type": "text", "name": "Gerador Criativo", "model": "deepseek/deepseek-v4-flash", "traits": ["criativo"],
+     "extra_prompt": "Produza UMA solução completa para a tarefa, priorizando originalidade.", "x": 60, "y": 260},
+    {"id": "n3", "type": "text", "name": "Gerador Minimalista", "model": "deepseek/deepseek-v4-flash", "traits": ["conciso"],
+     "extra_prompt": "Produza UMA solução completa para a tarefa, com o mínimo de partes móveis.", "x": 60, "y": 440},
+    {"id": "n4", "type": "text", "name": "Avaliador", "model": "deepseek/deepseek-v4-pro", "traits": ["rigoroso", "criterioso"],
+     "extra_prompt": "Compare as soluções recebidas com critérios explícitos, ESCOLHA a melhor (cite qual), e liste as melhorias concretas que ela precisa. Reproduza a solução escolhida na íntegra.", "x": 420, "y": 260},
+    {"id": "n5", "type": "text", "name": "Refinador", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"],
+     "extra_prompt": "Aplique TODAS as melhorias listadas pelo Avaliador à solução escolhida e entregue a versão final completa.", "x": 780, "y": 260},
+    {"id": "n6", "type": "text", "name": "Avaliador Final", "model": "deepseek/deepseek-v4-pro", "traits": ["cetico", "conciso"],
+     "extra_prompt": "Dê o veredito final: a versão refinada resolve a tarefa? Nota de 0 a 10 com justificativa curta.", "x": 1140, "y": 260}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n4"},
+    {"id": "e2", "source": "n2", "target": "n4"},
+    {"id": "e3", "source": "n3", "target": "n4"},
+    {"id": "e4", "source": "n4", "target": "n5", "label": "melhor + melhorias"},
+    {"id": "e5", "source": "n5", "target": "n6", "label": "versão final"}
+  ]
+}

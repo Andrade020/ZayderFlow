@@ -1,0 +1,27 @@
+{
+  "template_id": "hierarquia",
+  "name": "Gerente → subagentes",
+  "description": "Um Gerente decompõe a tarefa em três frentes; três Especialistas trabalham em paralelo; um Consolidador revisa e integra tudo numa entrega única.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Gerente", "model": "deepseek/deepseek-v4-pro", "traits": ["criterioso"],
+     "extra_prompt": "Decomponha a tarefa em exatamente 3 frentes de trabalho independentes, numeradas, com instruções claras para cada especialista.", "x": 60, "y": 260},
+    {"id": "n2", "type": "text", "name": "Especialista 1", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"],
+     "extra_prompt": "Execute APENAS a frente 1 descrita pelo Gerente, com profundidade.", "x": 420, "y": 80},
+    {"id": "n3", "type": "text", "name": "Especialista 2", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"],
+     "extra_prompt": "Execute APENAS a frente 2 descrita pelo Gerente, com profundidade.", "x": 420, "y": 260},
+    {"id": "n4", "type": "text", "name": "Especialista 3", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"],
+     "extra_prompt": "Execute APENAS a frente 3 descrita pelo Gerente, com profundidade.", "x": 420, "y": 440},
+    {"id": "n5", "type": "text", "name": "Consolidador", "model": "deepseek/deepseek-v4-pro", "traits": ["criterioso", "conciso"],
+     "extra_prompt": "Revise o trabalho dos especialistas, resolva contradições e integre tudo numa entrega única e coerente.", "x": 780, "y": 260}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n2", "label": "frente 1"},
+    {"id": "e2", "source": "n1", "target": "n3", "label": "frente 2"},
+    {"id": "e3", "source": "n1", "target": "n4", "label": "frente 3"},
+    {"id": "e4", "source": "n2", "target": "n5"},
+    {"id": "e5", "source": "n3", "target": "n5"},
+    {"id": "e6", "source": "n4", "target": "n5"}
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "template_id": "painel_critico",
+  "name": "Painel de analistas",
+  "description": "5 analistas com personalidades diferentes analisam em paralelo; um Crítico e um Elogiador consolidam os problemas e os pontos fortes; um Sintetizador entrega o parecer final.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Analista Rigoroso", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"], "x": 60, "y": 40},
+    {"id": "n2", "type": "text", "name": "Analista Criativo", "model": "deepseek/deepseek-v4-flash", "traits": ["criativo"], "x": 60, "y": 180},
+    {"id": "n3", "type": "text", "name": "Analista Cético", "model": "deepseek/deepseek-v4-flash", "traits": ["cetico"], "x": 60, "y": 320},
+    {"id": "n4", "type": "text", "name": "Analista Criterioso", "model": "deepseek/deepseek-v4-flash", "traits": ["criterioso"], "x": 60, "y": 460},
+    {"id": "n5", "type": "text", "name": "Analista Didático", "model": "deepseek/deepseek-v4-flash", "traits": ["didatico"], "x": 60, "y": 600},
+    {"id": "n6", "type": "text", "name": "Crítico", "model": "deepseek/deepseek-v4-flash", "traits": ["critico", "conciso"],
+     "extra_prompt": "Consolide os PROBLEMAS e riscos apontados pelos analistas, do mais grave ao menos grave.", "x": 420, "y": 180},
+    {"id": "n7", "type": "text", "name": "Elogiador", "model": "deepseek/deepseek-v4-flash", "traits": ["elogiador", "conciso"],
+     "extra_prompt": "Consolide os PONTOS FORTES apontados pelos analistas.", "x": 420, "y": 460},
+    {"id": "n8", "type": "text", "name": "Sintetizador", "model": "deepseek/deepseek-v4-pro", "traits": ["criterioso", "conciso"],
+     "extra_prompt": "Produza um parecer único e final, equilibrando críticas e elogios, com uma recomendação clara.", "x": 780, "y": 320}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n6"},
+    {"id": "e2", "source": "n2", "target": "n6"},
+    {"id": "e3", "source": "n3", "target": "n6"},
+    {"id": "e4", "source": "n4", "target": "n6"},
+    {"id": "e5", "source": "n5", "target": "n6"},
+    {"id": "e6", "source": "n1", "target": "n7"},
+    {"id": "e7", "source": "n2", "target": "n7"},
+    {"id": "e8", "source": "n3", "target": "n7"},
+    {"id": "e9", "source": "n4", "target": "n7"},
+    {"id": "e10", "source": "n5", "target": "n7"},
+    {"id": "e11", "source": "n6", "target": "n8", "label": "críticas"},
+    {"id": "e12", "source": "n7", "target": "n8", "label": "elogios"}
+  ]
+}

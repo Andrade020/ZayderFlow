@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 
 from .config import Settings, load_api_keys, save_api_key
 from .executor import CoderFn, GraphExecutor, TextFn
+from .gallery import list_templates, load_template
 from .models import Graph, RunReport, validate_runnable
 from .pricing import PRICES_PER_M, cost_for, opus_equiv_usd
 from .store import load_graph, save_graph
@@ -295,6 +296,22 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
         if out is None:
             raise HTTPException(404, detail="esse agente ainda não produziu saída")
         return out.model_dump(mode="json")
+
+    @app.get("/api/templates")
+    def templates():
+        return list_templates()
+
+    @app.post("/api/templates/{template_id}/load")
+    def template_load(template_id: str):
+        try:
+            graph = load_template(template_id)
+        except KeyError:
+            raise HTTPException(404, detail="template não encontrado")
+        try:
+            manager.set_graph(graph)
+        except RuntimeError as exc:
+            raise HTTPException(409, detail=str(exc))
+        return graph.model_dump(mode="json")
 
     @app.get("/api/traits")
     def traits():

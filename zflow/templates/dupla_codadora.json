@@ -1,0 +1,19 @@
+{
+  "template_id": "dupla_codadora",
+  "name": "Arquiteto + Codador + Revisor",
+  "description": "Um Arquiteto especifica a mudança em detalhes; um Codador (Aider) edita os arquivos do projeto; um Revisor lê o resumo do que foi feito e dá parecer. Pede sua aprovação antes de editar arquivos.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Arquiteto", "model": "deepseek/deepseek-v4-pro", "traits": ["criterioso", "conciso"],
+     "extra_prompt": "Especifique a mudança de código em detalhes: arquivos a criar/editar, funções com assinaturas, e critério de pronto. Não escreva o código inteiro, escreva a especificação.", "x": 60, "y": 200},
+    {"id": "n2", "type": "coder", "name": "Codador", "model": "deepseek/deepseek-v4-flash", "traits": [],
+     "extra_prompt": "", "x": 420, "y": 200},
+    {"id": "n3", "type": "text", "name": "Revisor", "model": "deepseek/deepseek-v4-pro", "traits": ["rigoroso", "conciso"],
+     "extra_prompt": "Leia o resumo do que o Codador fez e dê um parecer: a especificação foi cumprida? O que falta ou preocupa?", "x": 780, "y": 200}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n2", "label": "especificação"},
+    {"id": "e2", "source": "n2", "target": "n3", "label": "resumo + diff"}
+  ]
+}
