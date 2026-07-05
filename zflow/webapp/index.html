@@ -185,6 +185,52 @@
   #promptPreview{ background:var(--panel2); border:1px solid var(--line-soft); border-radius:8px;
                   padding:9px 11px; font:11px/1.6 var(--mono); color:var(--dim); white-space:pre-wrap; margin-top:6px; }
 
+  /* ---------------- feed de execução ---------------- */
+  #feedWrap{ position:absolute; left:14px; bottom:14px; width:380px; max-width:46vw; max-height:44%;
+             display:flex; flex-direction:column; gap:6px; overflow-y:auto; z-index:12; }
+  .feeditem{ display:flex; gap:10px; align-items:center; font:12.5px/1.4 var(--sans);
+             padding:8px 11px; border-radius:10px; background:var(--panel);
+             border:1px solid var(--line-soft); border-left:3px solid var(--line);
+             box-shadow:var(--shadow-sm); animation:slideIn .3s cubic-bezier(.2,.7,.3,1); }
+  .feeditem .fi{ width:18px; text-align:center; font-size:14px; flex:none; }
+  .feeditem .fx{ flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .feeditem.ok{ border-left-color:var(--ok); }
+  .feeditem.warn{ border-left-color:var(--warn); }
+  .feeditem.err{ border-left-color:var(--err); }
+  .feeditem.run{ border-left-color:var(--accent); }
+  .feeditem.run .fi{ animation:pulse 1.2s ease-in-out infinite; }
+  .feeditem.click{ cursor:pointer; }
+  .feeditem.click:hover{ border-color:var(--accent-line); }
+  @keyframes slideIn{ from{ transform:translateX(-8px); opacity:0; } to{ transform:none; opacity:1; } }
+
+  /* setas com fluxo passando */
+  #wires path.wire.flow{ stroke:var(--accent); stroke-dasharray:8 6; animation:march 1.1s linear infinite; }
+  @keyframes march{ to{ stroke-dashoffset:-28; } }
+  .flowdot{ fill:var(--accent); filter:drop-shadow(0 0 6px var(--accent)); }
+
+  /* ---------------- barra de aprovação ---------------- */
+  #approvalBar{ position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:20;
+                background:var(--panel); border:1.5px solid var(--warn-line); border-radius:13px;
+                padding:12px 16px; box-shadow:var(--shadow-lg); max-width:min(560px, 80%);
+                display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+                animation:toastIn .3s cubic-bezier(.2,.9,.3,1.2); }
+  #approvalBar .msg{ font:13px/1.5 var(--sans); color:var(--text); flex:1; min-width:200px; }
+  #approvalBar .msg::before{ content:"⚠️ "; }
+
+  /* ---------------- drawer de saída ---------------- */
+  #drawerWrap{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:90;
+               display:flex; justify-content:flex-end; }
+  #drawer{ width:min(620px, 92vw); background:var(--panel); border-left:1px solid var(--line);
+           box-shadow:var(--shadow-lg); display:flex; flex-direction:column;
+           animation:drawerIn .28s cubic-bezier(.2,.8,.3,1); }
+  @keyframes drawerIn{ from{ transform:translateX(40px); opacity:0; } to{ transform:none; opacity:1; } }
+  #drawerHead{ display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); }
+  #drawerHead b{ font:700 14px var(--sans); color:var(--text-strong); flex:1; }
+  #drawerMeta{ padding:10px 18px; font:11.5px var(--mono); color:var(--dim); border-bottom:1px solid var(--line-soft);
+               display:flex; gap:14px; flex-wrap:wrap; }
+  #drawerBody{ flex:1; overflow:auto; padding:16px 18px; font:13px/1.7 var(--sans);
+               white-space:pre-wrap; color:var(--text); }
+
   /* ---------------- toast ---------------- */
   #toasts{ position:fixed; bottom:18px; left:50%; transform:translateX(-50%); z-index:100;
            display:flex; flex-direction:column; gap:8px; align-items:center; }
@@ -232,7 +278,9 @@
   <button id="tplBtn" class="secondary" title="arquiteturas prontas para arrastar e ajustar">📚 Templates</button>
   <span class="tb-sep"></span>
   <input id="taskInput" placeholder="Qual é a tarefa? ex.: Avalie esta ideia de produto: ...">
-  <button id="runBtn" disabled title="execução chega na próxima etapa">▶ Rodar</button>
+  <button id="runBtn">▶ Rodar</button>
+  <button id="abortBtn" class="danger hidden">■ Abortar</button>
+  <button id="resetBtn" class="secondary hidden">↺ Nova execução</button>
 </div>
 
 <div id="workspace">
@@ -252,6 +300,13 @@
       <button class="icon-btn" id="zoomOut" title="afastar">−</button>
       <button class="icon-btn" id="zoomFit" title="enquadrar tudo">⛶</button>
     </div>
+    <div id="feedWrap"></div>
+    <div id="approvalBar" class="hidden">
+      <span class="msg" id="approvalMsg"></span>
+      <button id="apYes">✔ Aprovar</button>
+      <button id="apSkip" class="secondary">⏭ Pular</button>
+      <button id="apAbort" class="danger">■ Abortar</button>
+    </div>
   </div>
   <aside id="inspector">
     <h2>Propriedades</h2>
@@ -261,6 +316,14 @@
 </div>
 
 <div id="toasts"></div>
+
+<div id="drawerWrap" class="hidden">
+  <div id="drawer">
+    <div id="drawerHead"><b id="drawerTitle"></b><button class="icon-btn" id="drawerClose" title="fechar">✕</button></div>
+    <div id="drawerMeta"></div>
+    <div id="drawerBody"></div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -659,6 +722,7 @@ function renderInspector() {
     <label class="check" style="margin-top:14px"><input type="checkbox" id="i_task" ${n.include_task ? "checked" : ""}> recebe a tarefa original</label>
     <details style="margin-top:12px"><summary>ver prompt final</summary><div id="promptPreview"></div></details>
     <label></label>
+    ${st && st.node_status[n.id] && st.node_status[n.id] !== "pending" ? `<button class="secondary" id="i_output" style="margin-bottom:8px">📄 Ver resposta</button>` : ""}
     <button class="danger" id="i_delNode">🗑 Apagar agente</button>`;
 
   const upd = () => { renderNode(n); renderEdgesOf(n.id); updatePromptPreview(n); scheduleSave(); };
@@ -668,6 +732,8 @@ function renderInspector() {
   const filesEl = $("i_files");
   if (filesEl) filesEl.oninput = (ev) => { n.files = ev.target.value.split("\n").map(s => s.trim()).filter(Boolean); scheduleSave(); };
   $("i_task").onchange = (ev) => { n.include_task = ev.target.checked; scheduleSave(); };
+  const outBtn = $("i_output");
+  if (outBtn) outBtn.onclick = () => openDrawer(n.id);
   $("i_delNode").onclick = deleteSelection;
   box.querySelectorAll(".chip").forEach(ch => {
     ch.onclick = () => {
@@ -694,6 +760,196 @@ function updatePromptPreview(n) {
 
 /* ================= nome do fluxo ================= */
 $("graphName").addEventListener("input", (ev) => { graph.name = ev.target.value || "sem título"; scheduleSave(); });
+
+/* ================= execução ao vivo ================= */
+let lastSeq = 0, st = null;
+
+async function post(url, body) {
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : "{}" });
+    if (!r.ok) {
+      const d = await r.json().catch(() => ({}));
+      toast(d.detail || ("erro " + r.status), "err");
+      return null;
+    }
+    return await r.json();
+  } catch (e) { toast("não consegui falar com o servidor", "err"); return null; }
+}
+
+$("runBtn").onclick = async () => {
+  const task = $("taskInput").value.trim();
+  if (!task) { toast("descreva a tarefa antes de rodar", "warn"); $("taskInput").focus(); return; }
+  await saveNow();  // garante que o servidor tem o grafo mais recente
+  clearFeed();
+  const r = await post("/api/run", { task });
+  if (r) { lastSeq = 0; }
+};
+$("abortBtn").onclick = () => post("/api/abort");
+$("resetBtn").onclick = async () => {
+  const r = await post("/api/reset");
+  if (r) { lastSeq = 0; clearFeed(); applyStatuses({}); }
+};
+$("apYes").onclick = () => post("/api/approve", { decision: "approve" });
+$("apSkip").onclick = () => post("/api/approve", { decision: "skip" });
+$("apAbort").onclick = () => post("/api/approve", { decision: "abort" });
+
+/* ---- feed amigável ---- */
+function clearFeed() { $("feedWrap").innerHTML = ""; }
+function pushFeed(icon, text, cls, nodeId) {
+  const it = document.createElement("div");
+  it.className = "feeditem" + (cls ? " " + cls : "") + (nodeId ? " click" : "");
+  it.innerHTML = `<span class="fi">${icon}</span><span class="fx">${esc(text)}</span>`;
+  if (nodeId) it.onclick = () => openDrawer(nodeId);
+  const wrap = $("feedWrap");
+  wrap.prepend(it);
+  while (wrap.children.length > 40) wrap.lastChild.remove();
+}
+function money(v) { return "$" + (+v).toFixed(4); }
+
+function handleEvent(ev) {
+  const k = ev.kind;
+  if (k === "run_start") pushFeed("🚀", "execução começou", "run");
+  else if (k === "node_start") {
+    const n = nodeById(ev.node_id);
+    pushFeed(n && n.type === "coder" ? "🛠️" : "🧠", `${ev.name} começou a pensar…`, "run");
+    for (const e of graph.edges) if (e.target === ev.node_id) {
+      const rec = edgeEls.get(e.id); if (rec) rec.wire.classList.add("flow");
+    }
+  }
+  else if (k === "node_output") {
+    pushFeed("💬", `${ev.name} respondeu (${ev.tokens_out} tokens · ${money(ev.cost_usd)}) — clique para ler`, "ok", ev.node_id);
+    for (const e of graph.edges) {
+      const rec = edgeEls.get(e.id);
+      if (!rec) continue;
+      if (e.target === ev.node_id) rec.wire.classList.remove("flow");
+      if (e.source === ev.node_id) flowPulse(rec.wire);
+    }
+  }
+  else if (k === "node_error") {
+    pushFeed("❌", `${ev.name} falhou: ${ev.error}`, "err", ev.node_id);
+    stopFlows(ev.node_id);
+  }
+  else if (k === "node_skipped") { pushFeed("⏭", `${ev.name}: ${ev.reason || "pulado"}`, "warn"); stopFlows(ev.node_id); }
+  else if (k === "ceiling") pushFeed("💸", `teto de custo atingido (${money(ev.cost_usd)} de ${money(ev.ceiling_usd)}) — execução interrompida`, "warn");
+  else if (k === "run_done") {
+    if (ev.aborted) { pushFeed("🏁", `execução interrompida (custo ${money(ev.cost_usd_total)})`, "warn"); toast("execução interrompida", "warn"); }
+    else { pushFeed("🏁", `pronto! custo total ${money(ev.cost_usd_total)}`, "ok"); toast("fluxo concluído — " + money(ev.cost_usd_total), "ok"); }
+  }
+  else if (k === "run_error") pushFeed("💥", ev.error, "err");
+}
+
+function stopFlows(nodeId) {
+  for (const e of graph.edges) if (e.target === nodeId || e.source === nodeId) {
+    const rec = edgeEls.get(e.id); if (rec) rec.wire.classList.remove("flow");
+  }
+}
+
+/* pulso viajando pela seta (getPointAtLength + rAF, ~900ms) */
+function flowPulse(path) {
+  try {
+    const total = path.getTotalLength();
+    const dot = document.createElementNS(NS, "circle");
+    dot.setAttribute("r", "4.5");
+    dot.setAttribute("class", "flowdot");
+    wires.appendChild(dot);
+    const t0 = performance.now(), dur = 900;
+    (function step(now) {
+      const t = Math.min(1, (now - t0) / dur);
+      const p = path.getPointAtLength(total * t);
+      dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+      if (t < 1) requestAnimationFrame(step); else dot.remove();
+    })(t0);
+  } catch (e) { /* path pode ter sumido */ }
+}
+
+/* ---- status visual dos nós ---- */
+const STATUS_CLASSES = ["running", "done", "error", "skipped"];
+function applyStatuses(map) {
+  for (const [id, el] of nodeEls) {
+    el.classList.remove(...STATUS_CLASSES);
+    const s = map[id];
+    if (s && s !== "pending") el.classList.add(s);
+  }
+}
+
+/* ---- drawer de saída completa ---- */
+async function openDrawer(nodeId) {
+  const n = nodeById(nodeId);
+  try {
+    const r = await fetch("/api/output/" + encodeURIComponent(nodeId));
+    if (!r.ok) { toast("esse agente ainda não produziu saída", "warn"); return; }
+    const d = await r.json();
+    $("drawerTitle").textContent = (n ? n.name : nodeId);
+    const meta = [];
+    if (d.tokens_in || d.tokens_out) meta.push(`${d.tokens_in} → ${d.tokens_out} tokens`);
+    if (d.cost_usd) meta.push(money(d.cost_usd));
+    if (d.duration_s) meta.push(d.duration_s + "s");
+    if (d.commit_sha) meta.push("commit " + String(d.commit_sha).slice(0, 8));
+    $("drawerMeta").textContent = meta.join("   ·   ") || "—";
+    $("drawerBody").textContent = d.error && !d.text ? d.error : d.text;
+    $("drawerWrap").classList.remove("hidden");
+  } catch (e) { toast("não consegui buscar a saída", "err"); }
+}
+$("drawerClose").onclick = () => $("drawerWrap").classList.add("hidden");
+$("drawerWrap").addEventListener("pointerdown", (ev) => { if (ev.target === $("drawerWrap")) $("drawerWrap").classList.add("hidden"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("drawerWrap").classList.add("hidden"); });
+
+/* duplo clique num nó com saída abre o drawer */
+world.addEventListener("dblclick", (ev) => {
+  const nd = ev.target.closest ? ev.target.closest(".node") : null;
+  if (nd && st && st.node_status[nd.dataset.id] && st.node_status[nd.dataset.id] !== "pending") openDrawer(nd.dataset.id);
+});
+
+/* ---- polling ---- */
+const PHASE_LABEL = { idle: "pronto", running: "rodando", waiting_approval: "aguardando você",
+                      done: "concluído", error: "erro" };
+async function tick() {
+  let data;
+  try {
+    const r = await fetch("/api/state?since=" + lastSeq);
+    data = await r.json();
+  } catch (e) { return; }
+  st = data;
+  for (const ev of st.events) { handleEvent(ev); lastSeq = Math.max(lastSeq, ev.seq); }
+  lastSeq = Math.max(lastSeq, st.seq);
+
+  const busy = st.phase === "running" || st.phase === "waiting_approval";
+  if (busy !== running) {
+    running = busy;
+    $("addTextBtn").disabled = running;
+    $("addCoderBtn").disabled = running;
+    $("tplBtn").disabled = running;
+    $("runBtn").classList.toggle("hidden", running);
+    $("abortBtn").classList.toggle("hidden", !running);
+  }
+  $("resetBtn").classList.toggle("hidden", !(st.phase === "done" || st.phase === "error"));
+
+  const badge = $("phaseBadge");
+  badge.textContent = PHASE_LABEL[st.phase] || st.phase;
+  badge.className = "badge " + st.phase;
+
+  applyStatuses(st.node_status);
+
+  const bar = $("approvalBar");
+  if (st.phase === "waiting_approval" && st.pending_approval) {
+    $("approvalMsg").textContent = st.pending_approval;
+    bar.classList.remove("hidden");
+  } else bar.classList.add("hidden");
+
+  const cost = $("cost");
+  if (st.actual_usd > 0) { cost.textContent = money(st.actual_usd); cost.classList.remove("hidden"); }
+  else cost.classList.add("hidden");
+  const sav = $("savings");
+  if (st.saved_usd && st.saved_usd > 0) {
+    sav.textContent = "💸 economizou ~" + money(st.saved_usd) + " vs Claude Opus";
+    sav.title = "quanto esses mesmos tokens custariam no Claude Opus 4.8, menos o que você pagou";
+    sav.classList.remove("hidden");
+  } else sav.classList.add("hidden");
+
+  if (st.phase === "error" && st.error) badge.title = st.error;
+}
+setInterval(tick, 1000);
 
 /* ================= tema ================= */
 $("themeBtn").onclick = () => {
