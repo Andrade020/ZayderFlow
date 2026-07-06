@@ -182,6 +182,19 @@ def test_reset_after_done(client, diamond_graph):
     assert len(st["graph"]["nodes"]) == 4
 
 
+def test_new_run_clears_previous_events(client, diamond_graph):
+    """Regressão: reload/cliente novo (since=0) não pode re-exibir o histórico
+    da execução anterior — só os eventos da execução atual."""
+    _put_graph(client, diamond_graph)
+    client.post("/api/run", json={"task": "t1"})
+    wait_phase(client, "done")
+    client.post("/api/run", json={"task": "t2"})
+    wait_phase(client, "done")
+    kinds = [e["kind"] for e in client.get("/api/state?since=0").json()["events"]]
+    assert kinds.count("run_start") == 1
+    assert kinds.count("node_output") == 4
+
+
 def test_events_after_reset_are_visible_to_stale_client(client, diamond_graph):
     """Regressão: cliente que viu seq=N antes do reset precisa receber os
     eventos da execução seguinte pedindo since=N."""

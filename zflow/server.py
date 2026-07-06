@@ -88,6 +88,9 @@ class FlowManager:
         self.report = None
         self.node_status = {n.id: "pending" for n in self.graph.nodes}
         with self.lock:
+            # eventos da execução anterior saem da fila (senão um reload ou um
+            # cliente novo re-exibe o histórico todo); o seq segue monotônico
+            self.events = []
             self.tokens_in = 0
             self.tokens_out = 0
             self.by_model = {}

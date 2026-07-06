@@ -881,28 +881,35 @@ $("apAbort").onclick = () => post("/api/approve", { decision: "abort" });
 
 /* ---- feed amigável ---- */
 function clearFeed() { $("feedWrap").innerHTML = ""; }
-function pushFeed(icon, text, cls, nodeId) {
+function pushFeed(icon, text, cls, nodeId, pendingFor) {
   const it = document.createElement("div");
   it.className = "feeditem" + (cls ? " " + cls : "") + (nodeId ? " click" : "");
   it.innerHTML = `<span class="fi">${icon}</span><span class="fx">${esc(text)}</span>`;
   if (nodeId) it.onclick = () => openDrawer(nodeId);
+  if (pendingFor) it.dataset.pending = pendingFor;
   const wrap = $("feedWrap");
   wrap.prepend(it);
   while (wrap.children.length > 40) wrap.lastChild.remove();
+}
+/* o "X começou a pensar…" sai do feed quando X conclui — senão fica pulsando
+   pra sempre e parece que a execução travou */
+function resolvePending(nodeId) {
+  $("feedWrap").querySelectorAll(`[data-pending="${CSS.escape(nodeId)}"]`).forEach(el => el.remove());
 }
 function money(v) { return "$" + (+v).toFixed(4); }
 
 function handleEvent(ev) {
   const k = ev.kind;
-  if (k === "run_start") pushFeed("🚀", "execução começou", "run");
+  if (k === "run_start") { clearFeed(); pushFeed("🚀", "execução começou", "run", null, "__run__"); }
   else if (k === "node_start") {
     const n = nodeById(ev.node_id);
-    pushFeed(n && n.type === "coder" ? "🛠️" : "🧠", `${ev.name} começou a pensar…`, "run");
+    pushFeed(n && n.type === "coder" ? "🛠️" : "🧠", `${ev.name} começou a pensar…`, "run", null, ev.node_id);
     for (const e of graph.edges) if (e.target === ev.node_id) {
       const rec = edgeEls.get(e.id); if (rec) rec.wire.classList.add("flow");
     }
   }
   else if (k === "node_output") {
+    resolvePending(ev.node_id);
     pushFeed("💬", `${ev.name} respondeu (${ev.tokens_out} tokens · ${money(ev.cost_usd)}) — clique para ler`, "ok", ev.node_id);
     for (const e of graph.edges) {
       const rec = edgeEls.get(e.id);
@@ -912,12 +919,15 @@ function handleEvent(ev) {
     }
   }
   else if (k === "node_error") {
+    resolvePending(ev.node_id);
     pushFeed("❌", `${ev.name} falhou: ${ev.error}`, "err", ev.node_id);
     stopFlows(ev.node_id);
   }
-  else if (k === "node_skipped") { pushFeed("⏭", `${ev.name}: ${ev.reason || "pulado"}`, "warn"); stopFlows(ev.node_id); }
+  else if (k === "node_skipped") { resolvePending(ev.node_id); pushFeed("⏭", `${ev.name}: ${ev.reason || "pulado"}`, "warn"); stopFlows(ev.node_id); }
   else if (k === "ceiling") pushFeed("💸", `teto de custo atingido (${money(ev.cost_usd)} de ${money(ev.ceiling_usd)}) — execução interrompida`, "warn");
   else if (k === "run_done") {
+    // remove qualquer "pensando…" que sobrou (abort no meio, por exemplo)
+    $("feedWrap").querySelectorAll("[data-pending]").forEach(el => el.remove());
     if (ev.aborted) { pushFeed("🏁", `execução interrompida (custo ${money(ev.cost_usd_total)})`, "warn"); toast("execução interrompida", "warn"); }
     else { pushFeed("🏁", `pronto! custo total ${money(ev.cost_usd_total)}`, "ok"); toast("fluxo concluído — " + money(ev.cost_usd_total), "ok"); }
   }
