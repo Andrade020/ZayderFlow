@@ -6,6 +6,17 @@ from zflow.config import Settings
 from zflow.models import Edge, Graph, Node
 
 
+@pytest.fixture(autouse=True)
+def _isolate_custom_traits(tmp_path, monkeypatch):
+    """Nenhum teste lê/escreve o ~/.zflow/traits.json real do usuário."""
+    import zflow.traits as tr
+
+    monkeypatch.setattr(tr, "CUSTOM_TRAITS_PATH", tmp_path / "custom_traits.json")
+    tr._custom.clear()
+    yield
+    tr._custom.clear()
+
+
 @pytest.fixture
 def project_dir(tmp_path):
     return tmp_path

@@ -73,6 +73,20 @@ def test_traits_endpoint(client):
     assert all(i["label"] and i["prompt"] for i in items)
 
 
+def test_custom_trait_endpoints(client):
+    r = client.post("/api/traits", json={"label": "Sarcástico", "prompt": "Ironia leve."})
+    assert r.status_code == 200
+    key = r.json()["key"]
+    assert any(t["key"] == key and t["custom"] for t in r.json()["traits"])
+    # apagar embutida é proibido; apagar a custom funciona
+    assert client.delete("/api/traits/rigoroso").status_code == 404
+    r = client.delete(f"/api/traits/{key}")
+    assert r.status_code == 200
+    assert not any(t["key"] == key for t in r.json()["traits"])
+    # validação
+    assert client.post("/api/traits", json={"label": " ", "prompt": "x"}).status_code == 422
+
+
 def test_models_endpoint(client):
     models = client.get("/api/models").json()["models"]
     assert "deepseek-v4-flash" in models

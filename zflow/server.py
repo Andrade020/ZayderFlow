@@ -29,7 +29,7 @@ from .models import Graph, RunReport, persona_key, validate_runnable
 from .presets import all_presets
 from .pricing import PRICES_PER_M, cost_for, opus_equiv_usd
 from .store import load_graph, load_memory, save_graph, save_memory
-from .traits import TRAIT_LABELS, TRAITS
+from .traits import add_custom_trait, catalog, delete_custom_trait, load_custom_traits
 
 WEBAPP_DIR = Path(__file__).parent / "webapp"
 
@@ -293,6 +293,11 @@ class ProjectDirBody(BaseModel):
     create: bool = False  # cria a pasta se não existir
 
 
+class TraitBody(BaseModel):
+    label: str
+    prompt: str
+
+
 class SaveFileBody(BaseModel):
     path: str
     content: str
@@ -306,6 +311,7 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
                coder_fn: CoderFn | None = None) -> FastAPI:
     settings = settings or Settings()
     load_api_keys()
+    load_custom_traits()
     manager = FlowManager(settings, text_fn=text_fn, coder_fn=coder_fn)
 
     app = FastAPI(title="ZayderFlow")
@@ -544,10 +550,21 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
 
     @app.get("/api/traits")
     def traits():
-        return [
-            {"key": k, "label": TRAIT_LABELS.get(k, k), "prompt": v}
-            for k, v in TRAITS.items()
-        ]
+        return catalog()
+
+    @app.post("/api/traits")
+    def trait_create(body: TraitBody):
+        try:
+            key = add_custom_trait(body.label, body.prompt)
+        except ValueError as exc:
+            raise HTTPException(422, detail=str(exc))
+        return {"ok": True, "key": key, "traits": catalog()}
+
+    @app.delete("/api/traits/{key}")
+    def trait_delete(key: str):
+        if not delete_custom_trait(key):
+            raise HTTPException(404, detail="só personalidades criadas por você podem ser apagadas")
+        return {"ok": True, "traits": catalog()}
 
     @app.get("/api/models")
     def models():

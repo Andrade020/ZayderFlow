@@ -29,6 +29,44 @@ def test_unknown_trait_is_ignored():
     assert "nao-existe" not in prompt
 
 
+def test_custom_trait_roundtrip():
+    from zflow.traits import (
+        add_custom_trait, catalog, delete_custom_trait, load_custom_traits, trait_prompt,
+    )
+
+    key = add_custom_trait("Sarcástico", "Responda com ironia leve.")
+    assert key == "sarcastico"  # acento removido no slug
+    assert trait_prompt(key) == "Responda com ironia leve."
+    # persistiu no arquivo: recarregar mantém
+    load_custom_traits()
+    assert trait_prompt(key) == "Responda com ironia leve."
+    entry = next(t for t in catalog() if t["key"] == key)
+    assert entry["custom"] is True and entry["label"] == "Sarcástico"
+    assert delete_custom_trait(key) is True
+    assert trait_prompt(key) is None
+
+
+def test_custom_trait_key_never_collides_with_builtin():
+    from zflow.traits import add_custom_trait
+
+    key = add_custom_trait("Crítico", "Outra definição de crítico.")
+    assert key != "critico" and key.startswith("critico")
+
+
+def test_builtin_traits_cannot_be_deleted():
+    from zflow.traits import delete_custom_trait
+
+    assert delete_custom_trait("rigoroso") is False
+
+
+def test_custom_trait_used_in_system_prompt():
+    from zflow.traits import add_custom_trait
+
+    key = add_custom_trait("Pirata", "Fale como um pirata.")
+    node = Node(id="n1", name="X", traits=[key])
+    assert "Fale como um pirata." in build_system_prompt(node)
+
+
 def test_prompt_override_replaces_everything():
     node = Node(id="n1", name="X", traits=["rigoroso"],
                 extra_prompt="ignorado", prompt_override="Você é um pirata. Responda em versos.")
