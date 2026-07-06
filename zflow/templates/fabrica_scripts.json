@@ -1,0 +1,19 @@
+{
+  "template_id": "fabrica_scripts",
+  "name": "Fábrica de scripts",
+  "description": "Descreva o programa que você quer: um Especificador detalha, um Gerador escreve o código e SALVA como arquivo de verdade no projeto (veja em 📁 Arquivos e rode lá), e um Revisor confere antes de você executar.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Especificador", "model": "deepseek/deepseek-v4-pro", "traits": ["criterioso", "conciso"],
+     "extra_prompt": "Transforme o pedido numa especificação: nome do arquivo (ex.: jogo.py), funções com assinaturas, comportamento esperado e um exemplo de uso. Não escreva o código.", "x": 60, "y": 200},
+    {"id": "n2", "type": "text", "name": "Gerador de código", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"], "save_files": true,
+     "extra_prompt": "Escreva o código COMPLETO e executável seguindo a especificação. Coloque cada arquivo num bloco cercado com o nome na linha de abertura, ex.: ```python jogo.py — sempre nomeie o arquivo assim. Inclua `if __name__ == \"__main__\":` para rodar direto.", "x": 420, "y": 200},
+    {"id": "n3", "type": "text", "name": "Revisor de código", "model": "deepseek/deepseek-v4-pro", "traits": ["rigoroso", "cetico"],
+     "extra_prompt": "Revise o código gerado contra a especificação: ele roda? Cumpre o pedido? Liste problemas em ordem de gravidade e diga se está pronto para executar.", "x": 780, "y": 200}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n2", "label": "especificação"},
+    {"id": "e2", "source": "n2", "target": "n3", "label": "código"}
+  ]
+}

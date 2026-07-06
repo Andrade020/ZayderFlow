@@ -45,6 +45,8 @@ TRAIT_LABELS: dict[str, str] = {
 
 
 def build_system_prompt(node: Node) -> str:
+    if node.prompt_override.strip():
+        return node.prompt_override.strip()
     parts = [
         f'Você é "{node.name}", um agente num fluxo com vários agentes de IA.',
     ]

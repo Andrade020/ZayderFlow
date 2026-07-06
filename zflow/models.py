@@ -21,6 +21,9 @@ class Node(BaseModel):
     model: str = "deepseek/deepseek-v4-flash"  # id litellm
     traits: list[str] = Field(default_factory=list)  # chaves do catálogo (traits.py)
     extra_prompt: str = ""
+    # prompt manual: quando preenchido, SUBSTITUI o system prompt montado
+    # (traits + extra continuam guardados — limpar isto volta ao automático)
+    prompt_override: str = ""
     include_task: bool = True  # injeta a tarefa original no user message
     memory: bool = False  # lembra as conversas anteriores DESTE agente entre execuções
     save_files: bool = False  # salva blocos de código da resposta como arquivos reais

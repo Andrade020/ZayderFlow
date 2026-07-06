@@ -7,20 +7,32 @@ from zflow.models import validate_runnable
 from zflow.traits import TRAITS
 
 
+ALL_TEMPLATE_IDS = [
+    "painel_critico", "hierarquia", "evolutivo", "dupla_codadora",
+    "revisao_codigo", "fabrica_scripts", "esquadrao_debug",
+]
+
+
 def test_gallery_lists_all_templates():
     items = list_templates()
     ids = {t["id"] for t in items}
-    assert {"painel_critico", "hierarquia", "evolutivo", "dupla_codadora"} <= ids
+    assert set(ALL_TEMPLATE_IDS) <= ids
     assert all(t["name"] and t["description"] and t["nodes"] > 0 for t in items)
 
 
-@pytest.mark.parametrize("tid", ["painel_critico", "hierarquia", "evolutivo", "dupla_codadora"])
+@pytest.mark.parametrize("tid", ALL_TEMPLATE_IDS)
 def test_every_template_is_valid_and_runnable(tid):
     graph = load_template(tid)
     validate_runnable(graph)  # não levanta: sem ciclo, não-vazio
 
 
-@pytest.mark.parametrize("tid", ["painel_critico", "hierarquia", "evolutivo", "dupla_codadora"])
+def test_fabrica_scripts_generator_saves_files():
+    graph = load_template("fabrica_scripts")
+    gen = next(n for n in graph.nodes if "Gerador" in n.name)
+    assert gen.save_files is True
+
+
+@pytest.mark.parametrize("tid", ALL_TEMPLATE_IDS)
 def test_template_traits_exist_in_catalog(tid):
     graph = load_template(tid)
     for n in graph.nodes:

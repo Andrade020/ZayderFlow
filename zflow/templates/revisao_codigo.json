@@ -1,0 +1,22 @@
+{
+  "template_id": "revisao_codigo",
+  "name": "Revisão de código em 3 lentes",
+  "description": "Cole um trecho de código na tarefa: três revisores analisam em paralelo (bugs, legibilidade, performance) e um Sintetizador entrega o veredito com as mudanças priorizadas.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Caçador de Bugs", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso", "cetico"],
+     "extra_prompt": "Procure APENAS defeitos: bugs, casos de borda não tratados, condições de corrida, erros de tipo. Para cada um, diga onde está e como reproduzir.", "x": 60, "y": 80},
+    {"id": "n2", "type": "text", "name": "Revisor de Legibilidade", "model": "deepseek/deepseek-v4-flash", "traits": ["criterioso"],
+     "extra_prompt": "Avalie APENAS clareza: nomes, estrutura, complexidade desnecessária, código morto. Sugira renomeações e simplificações concretas.", "x": 60, "y": 260},
+    {"id": "n3", "type": "text", "name": "Analista de Performance", "model": "deepseek/deepseek-v4-flash", "traits": ["cetico"],
+     "extra_prompt": "Avalie APENAS desempenho: complexidade algorítmica, alocações desnecessárias, I/O em loop. Só aponte o que importa de verdade — nada de micro-otimização.", "x": 60, "y": 440},
+    {"id": "n4", "type": "text", "name": "Sintetizador", "model": "deepseek/deepseek-v4-pro", "traits": ["criterioso", "conciso"],
+     "extra_prompt": "Consolide as revisões num parecer único: lista de mudanças priorizada (crítico primeiro), e um veredito — aprovar, aprovar com ajustes, ou refazer.", "x": 420, "y": 260}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n4"},
+    {"id": "e2", "source": "n2", "target": "n4"},
+    {"id": "e3", "source": "n3", "target": "n4"}
+  ]
+}

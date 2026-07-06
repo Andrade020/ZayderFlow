@@ -1,0 +1,19 @@
+{
+  "template_id": "esquadrao_debug",
+  "name": "Esquadrão de debug",
+  "description": "Cole o erro (traceback) e o contexto na tarefa: um Depurador diagnostica a causa raiz, um Corrigidor (Aider) aplica a correção mínima nos arquivos do projeto, e um Verificador confere se a correção ataca a causa, não o sintoma.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Depurador", "model": "deepseek/deepseek-v4-pro", "traits": ["cetico", "rigoroso"],
+     "extra_prompt": "Diagnostique a CAUSA RAIZ do erro (não o sintoma). Diga em qual arquivo/função está o problema e descreva a correção mínima, sem escrever o código inteiro.", "x": 60, "y": 200},
+    {"id": "n2", "type": "coder", "name": "Corrigidor", "model": "deepseek/deepseek-v4-flash", "traits": [],
+     "extra_prompt": "Aplique APENAS a correção descrita pelo Depurador, com a mudança mínima possível. Não refatore nem renomeie nada.", "x": 420, "y": 200},
+    {"id": "n3", "type": "text", "name": "Verificador", "model": "deepseek/deepseek-v4-pro", "traits": ["cetico", "conciso"],
+     "extra_prompt": "Leia o diff do Corrigidor e responda: a mudança ataca a causa raiz apontada? Introduz algum risco novo? Veredito curto.", "x": 780, "y": 200}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n2", "label": "diagnóstico"},
+    {"id": "e2", "source": "n2", "target": "n3", "label": "diff"}
+  ]
+}

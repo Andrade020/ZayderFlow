@@ -26,6 +26,7 @@ from .config import Settings, load_api_keys, save_api_key
 from .executor import CoderFn, GraphExecutor, TextFn
 from .gallery import list_templates, load_template
 from .models import Graph, RunReport, validate_runnable
+from .presets import all_presets
 from .pricing import PRICES_PER_M, cost_for, opus_equiv_usd
 from .store import load_graph, load_memory, save_graph, save_memory
 from .traits import TRAIT_LABELS, TRAITS
@@ -482,6 +483,10 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
             raise HTTPException(404, detail="diretório do projeto não existe")
         _open_path(project)
         return {"ok": True}
+
+    @app.get("/api/presets")
+    def presets():
+        return all_presets()
 
     @app.get("/api/traits")
     def traits():

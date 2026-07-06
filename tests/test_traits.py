@@ -27,3 +27,14 @@ def test_unknown_trait_is_ignored():
     node = Node(id="n1", name="X", traits=["nao-existe"])
     prompt = build_system_prompt(node)
     assert "nao-existe" not in prompt
+
+
+def test_prompt_override_replaces_everything():
+    node = Node(id="n1", name="X", traits=["rigoroso"],
+                extra_prompt="ignorado", prompt_override="Você é um pirata. Responda em versos.")
+    prompt = build_system_prompt(node)
+    assert prompt == "Você é um pirata. Responda em versos."
+    assert TRAITS["rigoroso"] not in prompt
+    # limpar o override volta ao automático (traits preservados)
+    node.prompt_override = ""
+    assert TRAITS["rigoroso"] in build_system_prompt(node)

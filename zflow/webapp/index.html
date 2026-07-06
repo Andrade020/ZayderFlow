@@ -101,6 +101,15 @@
               border-radius:var(--radius-sm); padding:8px 12px; font:13px var(--sans); }
   #taskInput:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ghost); }
   .tb-sep{ width:1px; height:24px; background:var(--line); margin:0 2px; flex:none; }
+  .menuwrap{ position:relative; display:inline-flex; }
+  .menu{ position:absolute; top:100%; left:0; margin-top:6px; background:var(--panel);
+         border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow-lg);
+         z-index:60; min-width:270px; max-height:360px; overflow-y:auto; padding:6px;
+         animation:toastIn .18s cubic-bezier(.2,.9,.3,1.1); }
+  .menuitem{ padding:8px 11px; border-radius:8px; cursor:pointer; }
+  .menuitem:hover{ background:var(--accent-ghost); }
+  .menuitem b{ font:600 12.5px var(--sans); color:var(--text-strong); display:block; }
+  .menuitem span{ font:11.5px var(--sans); color:var(--dim); }
 
   /* ---------------- layout ---------------- */
   #workspace{ flex:1; display:flex; min-height:0; }
@@ -325,8 +334,8 @@
 </header>
 
 <div id="toolbar">
-  <button id="addTextBtn" class="secondary" title="agente que pensa e escreve (não mexe em arquivos)">🧠 Agente de texto</button>
-  <button id="addCoderBtn" class="secondary" title="agente que edita arquivos do projeto via Aider">🛠️ Agente codador</button>
+  <span class="menuwrap"><button id="addTextBtn" class="secondary" title="agente que pensa e escreve (não mexe em arquivos)">🧠 Agente de texto ▾</button></span>
+  <span class="menuwrap"><button id="addCoderBtn" class="secondary" title="agente que edita arquivos do projeto via Aider">🛠️ Agente codador ▾</button></span>
   <button id="tplBtn" class="secondary" title="arquiteturas prontas para arrastar e ajustar">📚 Templates</button>
   <button id="filesBtn" class="secondary" title="arquivos do projeto: ver, rodar, abrir a pasta">📁 Arquivos</button>
   <button id="exportBtn" class="icon-btn" title="baixar o fluxo como JSON">⤓</button>
@@ -529,6 +538,7 @@ function traitsSummary(n) {
   const parts = n.traits.length ? n.traits.map(k => lbl[k] || k) : ["sem personalidade definida"];
   if (n.memory) parts.push("🧠 lembra");
   if (n.save_files) parts.push("💾 gera arquivos");
+  if (n.prompt_override && n.prompt_override.trim()) parts.push("✍️ prompt manual");
   return parts.join(" · ");
 }
 function renderNode(n) {
@@ -718,15 +728,23 @@ canvas.addEventListener("pointerdown", (ev) => {
 });
 
 /* ================= adicionar / remover nós ================= */
-function addNode(type) {
+let presetsCatalog = { text: [], coder: [] };
+
+function addNode(type, preset) {
   const r = canvas.getBoundingClientRect();
   const c = clientToWorld(r.left + r.width * 0.42 + Math.random() * 60, r.top + r.height * 0.4 + Math.random() * 60);
+  const p = preset || {};
   const n = {
     id: freshId("n", graph.nodes),
     type,
-    name: type === "coder" ? "Codador" : "Agente",
+    name: p.name || (type === "coder" ? "Codador" : "Agente"),
     model: "deepseek/deepseek-v4-flash",
-    traits: [], extra_prompt: "", include_task: true,
+    traits: [...(p.traits || [])],
+    extra_prompt: p.extra_prompt || "",
+    prompt_override: "",
+    include_task: true,
+    memory: false,
+    save_files: !!p.save_files,
     x: Math.round(c.x), y: Math.round(c.y), files: [],
   };
   graph.nodes.push(n);
@@ -734,8 +752,31 @@ function addNode(type) {
   select({ type: "node", id: n.id });
   scheduleSave();
 }
-$("addTextBtn").onclick = () => addNode("text");
-$("addCoderBtn").onclick = () => addNode("coder");
+
+function closeMenus() { document.querySelectorAll(".menu").forEach(m => m.remove()); }
+function showPresetMenu(btn, type) {
+  const already = btn.parentElement.querySelector(".menu");
+  closeMenus();
+  if (already) return; // segundo clique fecha
+  const items = presetsCatalog[type] || [];
+  if (!items.length) { addNode(type); return; } // catálogo não carregou: adiciona em branco
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.innerHTML = items.map(p => `
+    <div class="menuitem" data-id="${esc(p.id)}"><b>${esc(p.label)}</b><span>${esc(p.desc)}</span></div>`).join("");
+  menu.querySelectorAll(".menuitem").forEach(item => {
+    item.onclick = (ev) => {
+      ev.stopPropagation();
+      addNode(type, items.find(p => p.id === item.dataset.id));
+      closeMenus();
+    };
+  });
+  btn.parentElement.appendChild(menu);
+}
+$("addTextBtn").onclick = (ev) => { ev.stopPropagation(); showPresetMenu(ev.currentTarget, "text"); };
+$("addCoderBtn").onclick = (ev) => { ev.stopPropagation(); showPresetMenu(ev.currentTarget, "coder"); };
+document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest(".menu, .menuwrap")) closeMenus(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 
 /* ================= export / import ================= */
 $("exportBtn").onclick = () => {
@@ -771,23 +812,34 @@ $("tplBtn").onclick = async () => {
   let items;
   try { items = await fetch("/api/templates").then(r => r.json()); }
   catch (e) { toast("não consegui buscar os templates", "err"); return; }
-  $("tplList").innerHTML = items.map(t => `
+  $("tplList").innerHTML = `
+    <div class="tplcard" data-id="__blank__">
+      <b>🗒 Em branco <span class="cnt">0 agentes</span></b>
+      <p>Limpa o canvas para você montar o seu fluxo do zero.</p>
+    </div>` + items.map(t => `
     <div class="tplcard" data-id="${esc(t.id)}">
       <b>${t.has_coder ? "🛠️" : "🧠"} ${esc(t.name)} <span class="cnt">${t.nodes} agentes</span></b>
       <p>${esc(t.description)}</p>
     </div>`).join("");
   $("tplList").querySelectorAll(".tplcard").forEach(card => {
     card.onclick = async () => {
-      if (graph.nodes.length && !confirm("Carregar o template substitui o fluxo atual. Continuar?")) return;
-      const r = await post("/api/templates/" + card.dataset.id + "/load");
-      if (!r) return;
-      graph = r;
+      if (graph.nodes.length && !confirm("Isto substitui o fluxo atual. Continuar?")) return;
+      if (card.dataset.id === "__blank__") {
+        graph = { name: "sem título", nodes: [], edges: [], max_rounds: 1,
+                  cost_ceiling_usd: 2.0, approve_coder: true };
+        await saveNow();
+        toast("canvas limpo — comece do zero", "ok");
+      } else {
+        const r = await post("/api/templates/" + card.dataset.id + "/load");
+        if (!r) return;
+        graph = r;
+        toast("template carregado — ajuste e rode", "ok");
+      }
       $("graphName").value = graph.name || "sem título";
       select(null);
       renderAll();
       fitView();
       $("tplWrap").classList.add("hidden");
-      toast("template carregado — ajuste e rode", "ok");
     };
   });
   $("tplWrap").classList.remove("hidden");
@@ -868,15 +920,21 @@ function renderInspector() {
     <label class="check" style="margin-top:8px" title="o agente vê as conversas anteriores dele nas próximas execuções"><input type="checkbox" id="i_memory" ${n.memory ? "checked" : ""}> 🧠 lembrar conversas (memória)</label>
     ${st && st.memory_counts && st.memory_counts[n.id] ? `<div class="row" style="margin-top:6px"><span class="muted">🧠 ${st.memory_counts[n.id]} conversa(s) lembrada(s)</span><button class="secondary" id="i_clearMem" style="padding:4px 10px;font-size:11px">limpar</button></div>` : ""}
     <label class="check" style="margin-top:8px" title="blocos de código com nome detectável na resposta viram arquivos reais no projeto"><input type="checkbox" id="i_save" ${n.save_files ? "checked" : ""}> 💾 salvar blocos de código como arquivos</label>` : ""}
-    <details style="margin-top:12px"><summary>ver prompt final</summary><div id="promptPreview"></div></details>
+    <details style="margin-top:12px" ${n.prompt_override ? "open" : ""}><summary>prompt final ${n.prompt_override ? "— ✍️ manual" : "(automático)"}</summary>
+      <textarea id="promptEdit" spellcheck="false" style="min-height:120px;font:11px/1.6 var(--mono);margin-top:6px"></textarea>
+      <div class="row" style="margin-top:6px">
+        <span class="muted" id="promptMode"></span>
+        <button class="secondary" id="promptRestore" style="padding:4px 10px;font-size:11px">↺ voltar ao automático</button>
+      </div>
+    </details>
     <label></label>
     ${st && st.node_status[n.id] && st.node_status[n.id] !== "pending" ? `<button class="secondary" id="i_output" style="margin-bottom:8px">📄 Ver resposta</button>` : ""}
     <button class="danger" id="i_delNode">🗑 Apagar agente</button>`;
 
-  const upd = () => { renderNode(n); renderEdgesOf(n.id); updatePromptPreview(n); scheduleSave(); };
+  const upd = () => { renderNode(n); renderEdgesOf(n.id); refreshPromptEditor(n); scheduleSave(); };
   $("i_name").oninput = (ev) => { n.name = ev.target.value || "Agente"; upd(); };
   $("i_model").oninput = (ev) => { n.model = ev.target.value; upd(); };
-  $("i_extra").oninput = (ev) => { n.extra_prompt = ev.target.value; updatePromptPreview(n); scheduleSave(); };
+  $("i_extra").oninput = (ev) => { n.extra_prompt = ev.target.value; refreshPromptEditor(n); scheduleSave(); };
   const filesEl = $("i_files");
   if (filesEl) filesEl.oninput = (ev) => { n.files = ev.target.value.split("\n").map(s => s.trim()).filter(Boolean); scheduleSave(); };
   $("i_task").onchange = (ev) => { n.include_task = ev.target.checked; scheduleSave(); };
@@ -901,18 +959,44 @@ function renderInspector() {
       upd();
     };
   });
-  updatePromptPreview(n);
+  const pe = $("promptEdit");
+  pe.oninput = () => {
+    // editar aqui vira um override manual — traits/extras ficam guardados;
+    // "voltar ao automático" descarta o manual e remonta dos chips
+    n.prompt_override = pe.value;
+    refreshPromptEditor(n, true);
+    renderNode(n);
+    scheduleSave();
+  };
+  $("promptRestore").onclick = () => {
+    n.prompt_override = "";
+    refreshPromptEditor(n);
+    renderNode(n);
+    scheduleSave();
+    toast("prompt voltou ao automático", "ok");
+  };
+  refreshPromptEditor(n);
 }
 
-function updatePromptPreview(n) {
-  const el = $("promptPreview");
-  if (!el) return;
+function assembledPrompt(n) {
   const byKey = {}; for (const t of traitsCatalog) byKey[t.key] = t.prompt;
   const parts = [`Você é "${n.name}", um agente num fluxo com vários agentes de IA.`];
   for (const k of n.traits) if (byKey[k]) parts.push(byKey[k]);
   if (n.extra_prompt.trim()) parts.push(n.extra_prompt.trim());
   parts.push("Você receberá uma tarefa e, possivelmente, mensagens de outros agentes. Responda em português. Emita SOMENTE a sua contribuição, sem repetir as mensagens recebidas.");
-  el.textContent = parts.join("\n");
+  return parts.join("\n");
+}
+
+function refreshPromptEditor(n, keepValue) {
+  const pe = $("promptEdit");
+  if (!pe) return;
+  const manual = !!n.prompt_override.trim();
+  if (!keepValue) pe.value = manual ? n.prompt_override : assembledPrompt(n);
+  $("promptMode").textContent = manual
+    ? "✍️ manual: este texto substitui o prompt montado"
+    : "automático: montado do nome + personalidade + extras";
+  const summary = pe.closest("details").querySelector("summary");
+  summary.textContent = manual ? "prompt final — ✍️ manual" : "prompt final (automático)";
 }
 
 /* ================= nome do fluxo ================= */
@@ -1245,14 +1329,16 @@ $("themeBtn").onclick = () => {
 /* ================= boot ================= */
 async function boot() {
   try {
-    const [gr, tr, mo] = await Promise.all([
+    const [gr, tr, mo, pr] = await Promise.all([
       fetch("/api/graph").then(r => r.json()),
       fetch("/api/traits").then(r => r.json()),
       fetch("/api/models").then(r => r.json()),
+      fetch("/api/presets").then(r => r.json()),
     ]);
     graph = gr;
     traitsCatalog = tr;
     modelsCatalog = mo.models || [];
+    presetsCatalog = pr || { text: [], coder: [] };
   } catch (e) {
     toast("não consegui falar com o servidor", "err");
   }
