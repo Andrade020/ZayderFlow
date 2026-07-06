@@ -9,8 +9,15 @@ from zflow.traits import TRAITS
 
 ALL_TEMPLATE_IDS = [
     "painel_critico", "hierarquia", "evolutivo", "dupla_codadora",
-    "revisao_codigo", "fabrica_scripts", "esquadrao_debug",
+    "revisao_codigo", "fabrica_scripts", "esquadrao_debug", "gerar_revisar_refazer",
 ]
+
+
+def test_gerar_revisar_refazer_uses_shared_persona():
+    graph = load_template("gerar_revisar_refazer")
+    instance = graph.node("n3")
+    assert instance.persona == "n1"
+    assert instance.name == graph.node("n1").name
 
 
 def test_gallery_lists_all_templates():

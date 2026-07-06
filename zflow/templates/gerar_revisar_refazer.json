@@ -1,0 +1,20 @@
+{
+  "template_id": "gerar_revisar_refazer",
+  "name": "Gerar → revisar → refazer (mesmo personagem)",
+  "description": "O Gerador escreve a 1ª versão; o Revisor critica; e o MESMO Gerador (instância duplicada, 👥) reaparece no fim: ele lembra do que escreveu, lê o feedback e entrega a versão corrigida — salvando o arquivo final no projeto.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Gerador de código", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"],
+     "extra_prompt": "Escreva código COMPLETO e executável. Coloque cada arquivo num bloco cercado com o nome na linha de abertura, ex.: ```python jogo.py — sempre nomeie o arquivo assim.", "x": 60, "y": 200},
+    {"id": "n2", "type": "text", "name": "Revisor de código", "model": "deepseek/deepseek-v4-pro", "traits": ["rigoroso", "cetico"],
+     "extra_prompt": "Revise o código recebido: bugs, casos de borda, clareza. Liste as correções necessárias em ordem de gravidade, objetivamente.", "x": 420, "y": 200},
+    {"id": "n3", "type": "text", "name": "Gerador de código", "model": "deepseek/deepseek-v4-flash", "traits": ["rigoroso"],
+     "persona": "n1", "save_files": true,
+     "extra_prompt": "Você escreveu a versão anterior deste código (está na sua memória). Aplique TODAS as correções do Revisor e entregue a versão final completa, no mesmo formato de bloco nomeado (```python arquivo.py).", "x": 780, "y": 200}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n2", "label": "1ª versão"},
+    {"id": "e2", "source": "n2", "target": "n3", "label": "correções"}
+  ]
+}

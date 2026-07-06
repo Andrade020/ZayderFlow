@@ -25,6 +25,10 @@ class Node(BaseModel):
     # (traits + extra continuam guardados — limpar isto volta ao automático)
     prompt_override: str = ""
     include_task: bool = True  # injeta a tarefa original no user message
+    # instância de personagem: quando preenchido, este nó É o mesmo personagem
+    # do nó original (aponta para a chave dele) — as instâncias compartilham o
+    # contexto na MESMA execução (o Gerador nº 2 lembra do que o nº 1 escreveu)
+    persona: str = ""
     memory: bool = False  # lembra as conversas anteriores DESTE agente entre execuções
     save_files: bool = False  # salva blocos de código da resposta como arquivos reais
     x: float = 0.0
@@ -86,6 +90,12 @@ class Graph(BaseModel):
     def predecessors(self, node_id: str) -> list[Node]:
         """Predecessores na ordem das arestas do grafo (ordem estável de input)."""
         return [self.node(e.source) for e in self.edges if e.target == node_id]
+
+
+def persona_key(node: Node) -> str:
+    """Chave de identidade do personagem: instâncias duplicadas compartilham a
+    do original; nó comum é o próprio personagem."""
+    return node.persona or node.id
 
 
 def topo_levels(graph: Graph) -> list[list[Node]]:

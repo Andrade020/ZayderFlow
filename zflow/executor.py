@@ -21,7 +21,15 @@ from typing import Callable
 
 from .codeblocks import save_named_blocks
 from .config import Settings
-from .models import Graph, Node, NodeOutput, RunReport, topo_levels, validate_runnable
+from .models import (
+    Graph,
+    Node,
+    NodeOutput,
+    RunReport,
+    persona_key,
+    topo_levels,
+    validate_runnable,
+)
 from .nodes import build_user_message, run_text_node
 from .store import remember
 
@@ -69,6 +77,9 @@ class GraphExecutor:
         self._coder_lock = threading.Lock()
         self._report_lock = threading.Lock()  # nós paralelos mutam o report
         self._memory_lock = threading.Lock()
+        # contexto DENTRO da execução, por personagem: instâncias duplicadas do
+        # mesmo personagem (persona) veem o que as anteriores disseram nesta run
+        self._run_history: dict[str, list[dict]] = {}
         self.report: RunReport | None = None  # visível DURANTE a execução (drawer da UI)
 
     def request_abort(self) -> None:
@@ -167,7 +178,13 @@ class GraphExecutor:
                 return
 
         self.emit("node_start", node_id=node.id, name=node.name, model=node.model)
-        history = self.memory.get(node.id) if (node.memory and node.type == "text") else None
+        pkey = persona_key(node)
+        history = None
+        if node.type == "text":
+            with self._memory_lock:
+                persistent = list(self.memory.get(pkey, [])) if node.memory else []
+                in_run = list(self._run_history.get(pkey, []))
+            history = (persistent + in_run) or None
 
         max_attempts = max(1, self.settings.max_attempts)
         attempt = 0
@@ -197,9 +214,11 @@ class GraphExecutor:
                         out.text, self.settings.resolved_project_dir())
                 except OSError:
                     pass  # disco/permissão: a resposta em si continua válida
-            if node.memory:
-                with self._memory_lock:
-                    remember(self.memory, node.id, user_msg, out.text)
+            with self._memory_lock:
+                self._run_history.setdefault(pkey, []).append(
+                    {"user": user_msg, "assistant": out.text})
+                if node.memory:
+                    remember(self.memory, pkey, user_msg, out.text)
                     if self.memory_save:
                         self.memory_save()
 

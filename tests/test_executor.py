@@ -212,6 +212,52 @@ def test_memory_capped_at_max_exchanges(settings):
     assert len(memory["a"]) == MEMORY_MAX_EXCHANGES
 
 
+def test_persona_instance_sees_earlier_context_in_same_run(settings):
+    """Gerador → Revisor → Gerador (mesma persona): a 2ª instância recebe o que
+    a 1ª disse como histórico, além do feedback do Revisor via seta."""
+    seen = {}
+
+    def spy(node, user_msg, s, history=None):
+        seen[node.id] = {"history": history, "msg": user_msg}
+        return NodeOutput(node_id=node.id, text=f"resposta de {node.id}")
+
+    g = Graph(
+        nodes=[
+            make_node("g1", name="Gerador"),
+            make_node("rev", name="Revisor"),
+            make_node("g2", name="Gerador", persona="g1"),
+        ],
+        edges=[
+            Edge(id="e1", source="g1", target="rev"),
+            Edge(id="e2", source="rev", target="g2"),
+        ],
+    )
+    GraphExecutor(g, settings, text_fn=spy).run("faça um jogo")
+    # a 1ª instância não tem histórico
+    assert seen["g1"]["history"] is None
+    # a 2ª instância lembra a resposta da 1ª (mesma persona)...
+    assert seen["g2"]["history"][-1]["assistant"] == "resposta de g1"
+    # ...e recebe o feedback do Revisor pela seta
+    assert "resposta de rev" in seen["g2"]["msg"]
+    # o Revisor (persona própria) não herda nada
+    assert seen["rev"]["history"] is None
+
+
+def test_persona_memory_persists_under_shared_key(settings):
+    memory = {}
+    g = Graph(
+        nodes=[
+            make_node("g1", name="Gerador", memory=True),
+            make_node("g2", name="Gerador", persona="g1", memory=True),
+        ],
+        edges=[Edge(id="e1", source="g1", target="g2")],
+    )
+    GraphExecutor(g, settings, text_fn=echo_text_fn, memory=memory).run("t")
+    # as duas trocas ficam na MESMA chave (a persona), não uma por nó
+    assert set(memory) == {"g1"}
+    assert len(memory["g1"]) == 2
+
+
 def test_save_files_auto_saves_named_blocks(settings, project_dir):
     def coder_like_text(node, user_msg, s, history=None):
         return NodeOutput(node_id=node.id,

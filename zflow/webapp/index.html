@@ -542,6 +542,7 @@ const NODE_ICO = { text: "🧠", coder: "🛠️" };
 function traitsSummary(n) {
   const lbl = {}; for (const t of traitsCatalog) lbl[t.key] = t.label;
   const parts = n.traits.length ? n.traits.map(k => lbl[k] || k) : ["sem personalidade definida"];
+  if (n.persona) parts.push("👥 mesmo personagem");
   if (n.memory) parts.push("🧠 lembra");
   if (n.save_files) parts.push("💾 gera arquivos");
   if (n.prompt_override && n.prompt_override.trim()) parts.push("✍️ prompt manual");
@@ -759,6 +760,29 @@ function addNode(type, preset) {
   scheduleSave();
 }
 
+function duplicateNode(src) {
+  const n = {
+    id: freshId("n", graph.nodes),
+    type: src.type,
+    name: src.name,
+    model: src.model,
+    traits: [...src.traits],
+    extra_prompt: src.extra_prompt,
+    prompt_override: src.prompt_override || "",
+    include_task: src.include_task,
+    persona: src.persona || src.id,  // instância do MESMO personagem
+    memory: src.memory,
+    save_files: !!src.save_files,
+    x: Math.round(src.x + 60), y: Math.round(src.y + 90),
+    files: [...(src.files || [])],
+  };
+  graph.nodes.push(n);
+  renderNodes();
+  select({ type: "node", id: n.id });
+  scheduleSave();
+  toast("instância criada — ligue as setas; ela lembra o que a original disse na mesma execução", "ok");
+}
+
 function closeMenus() { document.querySelectorAll(".menu").forEach(m => m.remove()); }
 function showPresetMenu(btn, type) {
   const already = btn.parentElement.querySelector(".menu");
@@ -907,8 +931,11 @@ function renderInspector() {
   const modelOpts = modelsCatalog.map(m => `<option value="${esc(m)}"></option>`).join("");
   const chips = traitsCatalog.map(t =>
     `<span class="chip${n.traits.includes(t.key) ? " on" : ""}" data-k="${esc(t.key)}" title="${esc(t.prompt)}">${esc(t.label)}</span>`).join("");
+  const pKey = n.persona || n.id;
+  const instances = graph.nodes.filter(o => (o.persona || o.id) === pKey);
   box.innerHTML = `
     <div class="muted">${NODE_ICO[n.type]} ${n.type === "coder" ? "Agente codador — edita arquivos via Aider" : "Agente de texto — pensa e escreve"}</div>
+    ${instances.length > 1 ? `<div class="muted" style="margin-top:4px">👥 personagem com ${instances.length} instâncias no fluxo — elas compartilham o contexto na mesma execução (a 2ª lembra o que a 1ª disse)</div>` : ""}
     <label>Nome do personagem</label>
     <input id="i_name" value="${esc(n.name)}" spellcheck="false">
     <label>Modelo (formato litellm: provedor/modelo)</label>
@@ -923,8 +950,8 @@ function renderInspector() {
     <textarea id="i_files" placeholder="ex.: app/main.py">${esc(n.files.join("\n"))}</textarea>` : ""}
     <label class="check" style="margin-top:14px"><input type="checkbox" id="i_task" ${n.include_task ? "checked" : ""}> recebe a tarefa original</label>
     ${n.type === "text" ? `
-    <label class="check" style="margin-top:8px" title="o agente vê as conversas anteriores dele nas próximas execuções"><input type="checkbox" id="i_memory" ${n.memory ? "checked" : ""}> 🧠 lembrar conversas (memória)</label>
-    ${st && st.memory_counts && st.memory_counts[n.id] ? `<div class="row" style="margin-top:6px"><span class="muted">🧠 ${st.memory_counts[n.id]} conversa(s) lembrada(s)</span><button class="secondary" id="i_clearMem" style="padding:4px 10px;font-size:11px">limpar</button></div>` : ""}
+    <label class="check" style="margin-top:8px" title="o personagem vê as conversas dele TAMBÉM nas próximas execuções (entre runs)"><input type="checkbox" id="i_memory" ${n.memory ? "checked" : ""}> 🧠 lembrar entre execuções</label>
+    ${st && st.memory_counts && st.memory_counts[pKey] ? `<div class="row" style="margin-top:6px"><span class="muted">🧠 ${st.memory_counts[pKey]} conversa(s) lembrada(s)</span><button class="secondary" id="i_clearMem" style="padding:4px 10px;font-size:11px">limpar</button></div>` : ""}
     <label class="check" style="margin-top:8px" title="blocos de código com nome detectável na resposta viram arquivos reais no projeto"><input type="checkbox" id="i_save" ${n.save_files ? "checked" : ""}> 💾 salvar blocos de código como arquivos</label>` : ""}
     <details style="margin-top:12px" ${n.prompt_override ? "open" : ""}><summary>prompt final ${n.prompt_override ? "— ✍️ manual" : "(automático)"}</summary>
       <textarea id="promptEdit" spellcheck="false" style="min-height:120px;font:11px/1.6 var(--mono);margin-top:6px"></textarea>
@@ -935,6 +962,7 @@ function renderInspector() {
     </details>
     <label></label>
     ${st && st.node_status[n.id] && st.node_status[n.id] !== "pending" ? `<button class="secondary" id="i_output" style="margin-bottom:8px">📄 Ver resposta</button>` : ""}
+    <button class="secondary" id="i_dup" style="margin-bottom:8px" title="cria outra instância DESTE personagem mais adiante na cadeia — ela lembra o que esta disse na mesma execução">⧉ Duplicar personagem</button>
     <button class="danger" id="i_delNode">🗑 Apagar agente</button>`;
 
   const upd = () => { renderNode(n); renderEdgesOf(n.id); refreshPromptEditor(n); scheduleSave(); };
@@ -955,6 +983,7 @@ function renderInspector() {
   };
   const outBtn = $("i_output");
   if (outBtn) outBtn.onclick = () => openDrawer(n.id);
+  $("i_dup").onclick = () => duplicateNode(n);
   $("i_delNode").onclick = deleteSelection;
   box.querySelectorAll(".chip").forEach(ch => {
     ch.onclick = () => {
