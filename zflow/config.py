@@ -23,6 +23,7 @@ class Settings(BaseModel):
     default_coder_model: str = "deepseek/deepseek-v4-flash"
     node_timeout_s: int = 180  # teto por chamada de nó (texto ou coder)
     max_workers: int = 4  # nós texto em paralelo por nível
+    max_attempts: int = 2  # tentativas por nó em falha de API/timeout (1 = sem retry)
 
     def resolved_project_dir(self) -> Path:
         return self.project_dir.expanduser().resolve()

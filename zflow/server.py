@@ -11,6 +11,9 @@ payload do polling.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import threading
 from pathlib import Path
 
@@ -18,17 +21,38 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ValidationError
 
+from .codeblocks import extract_code_blocks, resolve_within, suggest_filename
 from .config import Settings, load_api_keys, save_api_key
 from .executor import CoderFn, GraphExecutor, TextFn
 from .gallery import list_templates, load_template
 from .models import Graph, RunReport, validate_runnable
 from .pricing import PRICES_PER_M, cost_for, opus_equiv_usd
-from .store import load_graph, save_graph
+from .store import load_graph, load_memory, save_graph, save_memory
 from .traits import TRAIT_LABELS, TRAITS
 
 WEBAPP_DIR = Path(__file__).parent / "webapp"
 
 BUSY_PHASES = ("running", "waiting_approval")
+
+_FILES_SKIP_DIRS = {".git", ".zflow", ".zayder", "__pycache__", ".venv", "venv",
+                    "node_modules", ".pytest_cache", ".ruff_cache", "dist", "build",
+                    "*.egg-info"}
+FILE_VIEW_MAX_CHARS = 40_000
+RUN_OUTPUT_MAX_CHARS = 20_000
+
+
+def _open_path(path: Path) -> None:
+    """Abre a pasta no gerenciador de arquivos do SO (monkeypatchável nos testes)."""
+    norm = os.path.normpath(str(path))
+    if sys.platform == "win32":
+        try:
+            subprocess.Popen(["explorer", norm])  # traz a janela pra frente
+        except OSError:
+            os.startfile(norm)  # noqa: S606
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", norm])
+    else:
+        subprocess.Popen(["xdg-open", norm])
 
 
 class FlowManager:
@@ -44,6 +68,7 @@ class FlowManager:
         self.seq = 0
         self.events: list[dict] = []
         self.graph: Graph = load_graph(settings.resolved_project_dir())
+        self.memory: dict[str, list[dict]] = load_memory(settings.resolved_project_dir())
         self.node_status: dict[str, str] = {}  # id -> pending|running|done|error|skipped
         self.report: RunReport | None = None
         self.executor: GraphExecutor | None = None
@@ -76,6 +101,14 @@ class FlowManager:
             raise RuntimeError("não dá para editar o grafo com uma execução em andamento")
         self.graph = graph
         save_graph(graph, self.settings.resolved_project_dir())
+
+    # -- memória -------------------------------------------------------------
+    def clear_memory(self, node_id: str | None = None) -> None:
+        if node_id is None:
+            self.memory.clear()
+        else:
+            self.memory.pop(node_id, None)
+        save_memory(self.memory, self.settings.resolved_project_dir())
 
     # -- execução -----------------------------------------------------------
     def start_run(self, task: str) -> None:
@@ -139,6 +172,8 @@ class FlowManager:
             text_fn=self.text_fn,
             coder_fn=self.coder_fn,
             gate=self._gate,
+            memory=self.memory,
+            memory_save=lambda: save_memory(self.memory, self.settings.resolved_project_dir()),
         )
         self.executor = executor
         try:
@@ -190,6 +225,7 @@ class FlowManager:
                 "pending_approval": self.pending_approval,
                 "graph": self.graph.model_dump(mode="json"),
                 "node_status": dict(self.node_status),
+                "memory_counts": {k: len(v) for k, v in self.memory.items() if v},
                 "tokens_in": self.tokens_in,
                 "tokens_out": self.tokens_out,
                 "actual_usd": round(actual, 6),
@@ -214,6 +250,19 @@ class RunBody(BaseModel):
 
 class ApproveBody(BaseModel):
     decision: str  # approve | skip | abort
+
+
+class MemoryClearBody(BaseModel):
+    node_id: str | None = None  # None = limpa a memória de todos os agentes
+
+
+class SaveFileBody(BaseModel):
+    path: str
+    content: str
+
+
+class RunFileBody(BaseModel):
+    path: str
 
 
 def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
@@ -317,6 +366,122 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
         except RuntimeError as exc:
             raise HTTPException(409, detail=str(exc))
         return graph.model_dump(mode="json")
+
+    @app.post("/api/memory/clear")
+    def memory_clear(body: MemoryClearBody):
+        manager.clear_memory(body.node_id)
+        return {"ok": True, "memory_counts": {k: len(v) for k, v in manager.memory.items() if v}}
+
+    @app.get("/api/output/{node_id}/blocks")
+    def output_blocks(node_id: str):
+        ex = manager.executor
+        report = (ex.report if ex else None) or manager.report
+        out = report.outputs.get(node_id) if report else None
+        if out is None:
+            raise HTTPException(404, detail="esse agente ainda não produziu saída")
+        node = next((n for n in manager.graph.nodes if n.id == node_id), None)
+        stem = node.name if node else node_id
+        blocks = extract_code_blocks(out.text)
+        return [
+            {
+                "lang": b["lang"],
+                "suggested": suggest_filename(b, stem, i),
+                "code": b["code"],
+                "lines": b["code"].count("\n"),
+            }
+            for i, b in enumerate(blocks)
+        ]
+
+    # -- arquivos do projeto -------------------------------------------------
+    @app.get("/api/files")
+    def files():
+        project = manager.settings.resolved_project_dir()
+        out = []
+        if project.is_dir():
+            for p in sorted(project.rglob("*")):
+                rel = p.relative_to(project)
+                if any(part in _FILES_SKIP_DIRS for part in rel.parts):
+                    continue
+                if p.is_file():
+                    out.append({"path": str(rel).replace("\\", "/"),
+                                "bytes": p.stat().st_size})
+                if len(out) >= 500:
+                    break
+        return {"files": out, "project_dir": str(project)}
+
+    @app.get("/api/file")
+    def file_read(path: str):
+        project = manager.settings.resolved_project_dir()
+        try:
+            target = resolve_within(project, path)
+        except ValueError as exc:
+            raise HTTPException(400, detail=str(exc))
+        if not target.is_file():
+            raise HTTPException(404, detail="arquivo não encontrado")
+        try:
+            content = target.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise HTTPException(500, detail=str(exc))
+        truncated = len(content) > FILE_VIEW_MAX_CHARS
+        return {
+            "path": path,
+            "content": content[:FILE_VIEW_MAX_CHARS],
+            "truncated": truncated,
+            "lines": content.count("\n") + 1,
+        }
+
+    @app.post("/api/save-file")
+    def save_file(body: SaveFileBody):
+        project = manager.settings.resolved_project_dir()
+        try:
+            target = resolve_within(project, body.path)
+        except ValueError as exc:
+            raise HTTPException(400, detail=str(exc))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body.content, encoding="utf-8")
+        rel = str(target.relative_to(project)).replace("\\", "/")
+        return {"ok": True, "path": rel}
+
+    @app.post("/api/run-file")
+    def run_file(body: RunFileBody):
+        project = manager.settings.resolved_project_dir()
+        try:
+            target = resolve_within(project, body.path)
+        except ValueError as exc:
+            raise HTTPException(400, detail=str(exc))
+        if not target.is_file():
+            raise HTTPException(404, detail="arquivo não encontrado")
+        if target.suffix != ".py":
+            raise HTTPException(422, detail="só sei rodar arquivos .py")
+        env = dict(os.environ, PYTHONPATH=str(project), PYTHONIOENCODING="utf-8")
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(target)],
+                cwd=str(project), capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+                timeout=30, input="", env=env,
+            )
+            return {
+                "returncode": proc.returncode,
+                "timed_out": False,
+                "stdout": proc.stdout[:RUN_OUTPUT_MAX_CHARS],
+                "stderr": proc.stderr[:RUN_OUTPUT_MAX_CHARS],
+            }
+        except subprocess.TimeoutExpired as exc:
+            return {
+                "returncode": None,
+                "timed_out": True,
+                "stdout": (exc.stdout or "")[:RUN_OUTPUT_MAX_CHARS],
+                "stderr": "(interrompido: passou de 30s — programa interativo ou loop infinito?)",
+            }
+
+    @app.post("/api/reveal")
+    def reveal():
+        project = manager.settings.resolved_project_dir()
+        if not project.is_dir():
+            raise HTTPException(404, detail="diretório do projeto não existe")
+        _open_path(project)
+        return {"ok": True}
 
     @app.get("/api/traits")
     def traits():

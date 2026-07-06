@@ -29,17 +29,25 @@ def build_user_message(task: str, node: Node, received: list[tuple[str, str]]) -
     return "\n\n".join(parts) or "(sem tarefa nem mensagens — contribua com o que souber)"
 
 
-def run_text_node(node: Node, user_msg: str, settings: Settings) -> NodeOutput:
-    """Chama o modelo do nó com o system prompt da personalidade dele."""
+def run_text_node(node: Node, user_msg: str, settings: Settings,
+                  history: list[dict] | None = None) -> NodeOutput:
+    """Chama o modelo do nó com o system prompt da personalidade dele.
+
+    `history` = trocas anteriores deste agente ([{"user":..., "assistant":...}]),
+    injetadas como mensagens — a "memória" entre execuções.
+    """
     import litellm
+
+    messages = [{"role": "system", "content": build_system_prompt(node)}]
+    for exchange in history or []:
+        messages.append({"role": "user", "content": exchange.get("user", "")})
+        messages.append({"role": "assistant", "content": exchange.get("assistant", "")})
+    messages.append({"role": "user", "content": user_msg})
 
     started = time.monotonic()
     response = litellm.completion(
         model=node.model,
-        messages=[
-            {"role": "system", "content": build_system_prompt(node)},
-            {"role": "user", "content": user_msg},
-        ],
+        messages=messages,
         timeout=settings.node_timeout_s,
     )
     duration = time.monotonic() - started

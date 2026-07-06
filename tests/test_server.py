@@ -11,7 +11,7 @@ from zflow.server import create_app
 from zflow.store import load_graph
 
 
-def fake_text_fn(node, user_msg, settings):
+def fake_text_fn(node, user_msg, settings, history=None):
     return NodeOutput(node_id=node.id, text=f"resposta de {node.name} " + "x" * 3000,
                       tokens_in=100, tokens_out=50, cost_usd=0.01)
 
@@ -134,7 +134,7 @@ def test_run_empty_task_is_422(client, diamond_graph):
 
 
 def test_run_while_running_is_409(client, diamond_graph, project_dir):
-    slow = lambda n, m, s: (time.sleep(0.3), fake_text_fn(n, m, s))[1]
+    slow = lambda n, m, s, history=None: (time.sleep(0.3), fake_text_fn(n, m, s))[1]
     app = create_app(Settings(project_dir=project_dir), text_fn=slow)
     c = TestClient(app)
     _put_graph(c, diamond_graph)
@@ -165,6 +165,82 @@ def test_coder_gate_waits_for_approval(client, project_dir, diamond_graph):
 
 def test_approve_without_pending_is_409(client):
     assert client.post("/api/approve", json={"decision": "approve"}).status_code == 409
+
+
+def test_memory_persists_and_clears(project_dir, diamond_graph):
+    from zflow.models import Graph
+    from zflow.store import load_memory
+    from conftest import make_node
+
+    g = Graph(nodes=[make_node("a", memory=True)])
+    app = create_app(Settings(project_dir=project_dir), text_fn=fake_text_fn)
+    c = TestClient(app)
+    _put_graph(c, g)
+    c.post("/api/run", json={"task": "t"})
+    wait_phase(c, "done")
+    st = c.get("/api/state").json()
+    assert st["memory_counts"] == {"a": 1}
+    assert load_memory(project_dir) != {}
+    # limpar só o agente
+    r = c.post("/api/memory/clear", json={"node_id": "a"})
+    assert r.json()["memory_counts"] == {}
+    assert load_memory(project_dir) == {}
+
+
+def test_files_endpoints_roundtrip(client):
+    r = client.post("/api/save-file", json={"path": "sub/hello.py", "content": "print('oi')\n"})
+    assert r.status_code == 200 and r.json()["path"] == "sub/hello.py"
+    files = client.get("/api/files").json()["files"]
+    assert any(f["path"] == "sub/hello.py" for f in files)
+    d = client.get("/api/file", params={"path": "sub/hello.py"}).json()
+    assert d["content"] == "print('oi')\n"
+
+
+def test_save_file_outside_project_is_400(client):
+    assert client.post("/api/save-file", json={"path": "../fora.py", "content": "x"}).status_code == 400
+    assert client.get("/api/file", params={"path": "../fora.py"}).status_code == 400
+
+
+def test_run_file_captures_stdout_and_stderr(client):
+    client.post("/api/save-file", json={"path": "ok.py", "content": "print('funcionou')\n"})
+    r = client.post("/api/run-file", json={"path": "ok.py"}).json()
+    assert r["returncode"] == 0 and "funcionou" in r["stdout"]
+    client.post("/api/save-file", json={"path": "quebra.py", "content": "raise ValueError('x')\n"})
+    r = client.post("/api/run-file", json={"path": "quebra.py"}).json()
+    assert r["returncode"] != 0 and "ValueError" in r["stderr"]
+    assert client.post("/api/run-file", json={"path": "nao_existe.py"}).status_code == 404
+    client.post("/api/save-file", json={"path": "dados.txt", "content": "x"})
+    assert client.post("/api/run-file", json={"path": "dados.txt"}).status_code == 422
+
+
+def test_reveal_calls_opener(client, monkeypatch):
+    import zflow.server as srv
+
+    opened = {}
+    monkeypatch.setattr(srv, "_open_path", lambda p: opened.update(path=str(p)))
+    assert client.post("/api/reveal").json()["ok"]
+    assert opened["path"]
+
+
+def test_output_blocks_endpoint(project_dir, diamond_graph):
+    from zflow.models import Graph
+    from conftest import make_node
+
+    def code_text_fn(node, user_msg, settings, history=None):
+        return NodeOutput(node_id=node.id,
+                          text="```python hello.py\nprint('oi')\n```\n```js\nlet a=1\n```")
+
+    g = Graph(nodes=[make_node("a", name="Gerador")])
+    app = create_app(Settings(project_dir=project_dir), text_fn=code_text_fn)
+    c = TestClient(app)
+    _put_graph(c, g)
+    c.post("/api/run", json={"task": "t"})
+    wait_phase(c, "done")
+    blocks = c.get("/api/output/a/blocks").json()
+    assert len(blocks) == 2
+    assert blocks[0]["suggested"] == "hello.py"
+    assert blocks[1]["suggested"].endswith(".js")
+    assert c.get("/api/output/zz/blocks").status_code == 404
 
 
 def test_reset_after_done(client, diamond_graph):

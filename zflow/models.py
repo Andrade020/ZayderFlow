@@ -22,6 +22,8 @@ class Node(BaseModel):
     traits: list[str] = Field(default_factory=list)  # chaves do catálogo (traits.py)
     extra_prompt: str = ""
     include_task: bool = True  # injeta a tarefa original no user message
+    memory: bool = False  # lembra as conversas anteriores DESTE agente entre execuções
+    save_files: bool = False  # salva blocos de código da resposta como arquivos reais
     x: float = 0.0
     y: float = 0.0
     files: list[str] = Field(default_factory=list)  # só coder: arquivos-alvo sugeridos
@@ -132,6 +134,8 @@ class NodeOutput(BaseModel):
     commit_sha: str | None = None  # só coder
     error: str = ""
     skipped: bool = False
+    attempts: int = 1  # quantas tentativas foram usadas (retry automático)
+    files_saved: list[str] = Field(default_factory=list)  # arquivos gerados da resposta
 
 
 class RunReport(BaseModel):

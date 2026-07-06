@@ -11,13 +11,13 @@ from zflow.nodes import build_user_message
 from conftest import make_node
 
 
-def echo_text_fn(node, user_msg, settings):
+def echo_text_fn(node, user_msg, settings, history=None):
     return NodeOutput(node_id=node.id, text=f"eco de {node.name}",
                       tokens_in=100, tokens_out=50, cost_usd=0.01)
 
 
 def failing_text_fn(fail_ids):
-    def fn(node, user_msg, settings):
+    def fn(node, user_msg, settings, history=None):
         if node.id in fail_ids:
             raise RuntimeError("modelo caiu")
         return echo_text_fn(node, user_msg, settings)
@@ -44,7 +44,7 @@ def test_diamond_runs_everything(diamond_graph, settings):
 def test_fan_in_receives_predecessor_messages(diamond_graph, settings):
     captured = {}
 
-    def spy_fn(node, user_msg, settings):
+    def spy_fn(node, user_msg, settings, history=None):
         captured[node.id] = user_msg
         return echo_text_fn(node, user_msg, settings)
 
@@ -103,7 +103,7 @@ def test_parallel_within_level(settings):
     # 4 nós-fonte com barreira: só passa se rodarem juntos
     barrier = threading.Barrier(4, timeout=5)
 
-    def barrier_fn(node, user_msg, s):
+    def barrier_fn(node, user_msg, s, history=None):
         barrier.wait()
         return echo_text_fn(node, user_msg, s)
 
@@ -143,3 +143,85 @@ def test_build_user_message_without_task():
     msg = build_user_message("tarefa", n, [("Fulano", "olá")])
     assert "Tarefa" not in msg
     assert "### de Fulano:" in msg
+
+
+def test_retry_succeeds_on_second_attempt(settings):
+    calls = {"n": 0}
+
+    def flaky(node, user_msg, s, history=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TimeoutError("API fora do ar")
+        return echo_text_fn(node, user_msg, s)
+
+    settings.max_attempts = 3
+    g = Graph(nodes=[make_node("a")])
+    events, emit = collect_events()
+    report = GraphExecutor(g, settings, emit=emit, text_fn=flaky).run("t")
+    assert report.outputs["a"].attempts == 2
+    assert not report.outputs["a"].error
+    retries = [e for e in events if e["kind"] == "node_retry"]
+    assert len(retries) == 1 and retries[0]["attempt"] == 2
+
+
+def test_retry_gives_up_after_max_attempts(settings):
+    settings.max_attempts = 2
+    g = Graph(nodes=[make_node("a")])
+    report = GraphExecutor(g, settings, text_fn=failing_text_fn({"a"})).run("t")
+    out = report.outputs["a"]
+    assert out.error and out.attempts == 2
+
+
+def test_memory_history_is_passed_and_appended(settings):
+    seen = {}
+
+    def spy(node, user_msg, s, history=None):
+        seen["history"] = history
+        return echo_text_fn(node, user_msg, s)
+
+    memory = {"a": [{"user": "pergunta antiga", "assistant": "resposta antiga"}]}
+    g = Graph(nodes=[make_node("a", memory=True)])
+    GraphExecutor(g, settings, text_fn=spy, memory=memory).run("t")
+    assert seen["history"][0]["assistant"] == "resposta antiga"
+    # a nova troca foi lembrada
+    assert len(memory["a"]) == 2
+    assert memory["a"][-1]["assistant"] == "eco de Agente a"
+
+
+def test_memory_off_passes_none_and_does_not_append(settings):
+    seen = {}
+
+    def spy(node, user_msg, s, history=None):
+        seen["history"] = history
+        return echo_text_fn(node, user_msg, s)
+
+    memory = {"a": [{"user": "x", "assistant": "y"}]}
+    g = Graph(nodes=[make_node("a", memory=False)])
+    GraphExecutor(g, settings, text_fn=spy, memory=memory).run("t")
+    assert seen["history"] is None
+    assert len(memory["a"]) == 1
+
+
+def test_memory_capped_at_max_exchanges(settings):
+    from zflow.store import MEMORY_MAX_EXCHANGES
+
+    memory = {}
+    g = Graph(nodes=[make_node("a", memory=True)])
+    for _ in range(MEMORY_MAX_EXCHANGES + 3):
+        GraphExecutor(g, settings, text_fn=echo_text_fn, memory=memory).run("t")
+    assert len(memory["a"]) == MEMORY_MAX_EXCHANGES
+
+
+def test_save_files_auto_saves_named_blocks(settings, project_dir):
+    def coder_like_text(node, user_msg, s, history=None):
+        return NodeOutput(node_id=node.id,
+                          text="pronto:\n```python hello.py\nprint('oi')\n```",
+                          cost_usd=0.01)
+
+    g = Graph(nodes=[make_node("a", save_files=True)])
+    events, emit = collect_events()
+    report = GraphExecutor(g, settings, emit=emit, text_fn=coder_like_text).run("t")
+    assert report.outputs["a"].files_saved == ["hello.py"]
+    assert (project_dir / "hello.py").is_file()
+    out_ev = next(e for e in events if e["kind"] == "node_output")
+    assert out_ev["files_saved"] == ["hello.py"]

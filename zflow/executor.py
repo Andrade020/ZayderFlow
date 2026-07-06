@@ -19,12 +19,14 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Callable
 
+from .codeblocks import save_named_blocks
 from .config import Settings
 from .models import Graph, Node, NodeOutput, RunReport, topo_levels, validate_runnable
 from .nodes import build_user_message, run_text_node
+from .store import remember
 
 EmitFn = Callable[..., None]
-TextFn = Callable[[Node, str, Settings], NodeOutput]
+TextFn = Callable[..., NodeOutput]  # (node, user_msg, settings, history=None)
 CoderFn = Callable[[Node, str, Settings], NodeOutput]
 GateFn = Callable[[str], str]  # retorna "approve" | "skip" | "abort"
 
@@ -52,6 +54,8 @@ class GraphExecutor:
         text_fn: TextFn | None = None,
         coder_fn: CoderFn | None = None,
         gate: GateFn | None = None,
+        memory: dict[str, list[dict]] | None = None,
+        memory_save: Callable[[], None] | None = None,
     ):
         self.graph = graph
         self.settings = settings
@@ -59,9 +63,12 @@ class GraphExecutor:
         self.text_fn = text_fn or run_text_node
         self.coder_fn = coder_fn or _default_coder_fn
         self.gate = gate
+        self.memory = memory if memory is not None else {}
+        self.memory_save = memory_save
         self._abort = threading.Event()
         self._coder_lock = threading.Lock()
         self._report_lock = threading.Lock()  # nós paralelos mutam o report
+        self._memory_lock = threading.Lock()
         self.report: RunReport | None = None  # visível DURANTE a execução (drawer da UI)
 
     def request_abort(self) -> None:
@@ -160,20 +167,48 @@ class GraphExecutor:
                 return
 
         self.emit("node_start", node_id=node.id, name=node.name, model=node.model)
-        try:
-            if node.type == "coder":
-                with self._coder_lock:
-                    out = self.coder_fn(node, user_msg, self.settings)
-            else:
-                out = self.text_fn(node, user_msg, self.settings)
-        except Exception as exc:  # noqa: BLE001 — erro de nó não derruba o grafo
-            out = NodeOutput(node_id=node.id, error=f"{type(exc).__name__}: {exc}")
+        history = self.memory.get(node.id) if (node.memory and node.type == "text") else None
+
+        max_attempts = max(1, self.settings.max_attempts)
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                if node.type == "coder":
+                    with self._coder_lock:
+                        out = self.coder_fn(node, user_msg, self.settings)
+                else:
+                    out = self.text_fn(node, user_msg, self.settings, history=history)
+                out.attempts = attempt
+                break
+            except Exception as exc:  # noqa: BLE001 — erro de nó não derruba o grafo
+                if attempt >= max_attempts or self._abort.is_set():
+                    out = NodeOutput(node_id=node.id, attempts=attempt,
+                                     error=f"{type(exc).__name__}: {exc}")
+                    break
+                self.emit("node_retry", node_id=node.id, name=node.name,
+                          attempt=attempt + 1, max_attempts=max_attempts,
+                          error=f"{type(exc).__name__}: {exc}")
+
+        if not out.error and node.type == "text":
+            if node.save_files and out.text:
+                try:
+                    out.files_saved = save_named_blocks(
+                        out.text, self.settings.resolved_project_dir())
+                except OSError:
+                    pass  # disco/permissão: a resposta em si continua válida
+            if node.memory:
+                with self._memory_lock:
+                    remember(self.memory, node.id, user_msg, out.text)
+                    if self.memory_save:
+                        self.memory_save()
 
         with self._report_lock:
             report.outputs[node.id] = out
             report.cost_usd_total += out.cost_usd
         if out.error and not out.skipped:
-            self.emit("node_error", node_id=node.id, name=node.name, error=out.error)
+            self.emit("node_error", node_id=node.id, name=node.name, error=out.error,
+                      attempts=out.attempts)
         else:
             preview, truncated = _preview(out.text)
             self.emit(
@@ -187,4 +222,6 @@ class GraphExecutor:
                 cost_usd=round(out.cost_usd, 6),
                 duration_s=out.duration_s,
                 commit_sha=out.commit_sha,
+                attempts=out.attempts,
+                files_saved=out.files_saved,
             )

@@ -133,6 +133,10 @@
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; align-self:flex-start; }
   .node.coder .node-model{ color:var(--warn); background:var(--warn-ghost); border-color:var(--warn-line); }
   .node-traits{ font:10.5px var(--sans); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .node-stats{ font:600 10.5px var(--mono); color:var(--ok-2); display:none; }
+  .node-stats:not(:empty){ display:block; }
+  .node.error .node-stats{ color:var(--err); }
+  .node.running .node-stats{ color:var(--accent-2); }
   .port{ position:absolute; width:14px; height:14px; border-radius:50%; top:50%; margin-top:-7px;
          background:var(--panel3); border:2px solid var(--dim2); cursor:crosshair; z-index:2;
          transition:background .12s, border-color .12s, transform .12s; }
@@ -231,6 +235,38 @@
   #drawerBody{ flex:1; overflow:auto; padding:16px 18px; font:13px/1.7 var(--sans);
                white-space:pre-wrap; color:var(--text); }
 
+  /* ---------------- painel de arquivos ---------------- */
+  #filesWrap{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:80;
+              display:flex; align-items:center; justify-content:center; }
+  #filesModal{ width:min(860px, 94vw); height:min(600px, 86vh); background:var(--panel);
+               border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow:var(--shadow-lg);
+               display:flex; flex-direction:column; gap:12px;
+               animation:toastIn .25s cubic-bezier(.2,.9,.3,1.1); }
+  #filesHead{ display:flex; align-items:center; gap:10px; }
+  #filesHead h2{ margin:0; font:700 16px var(--sans); color:var(--text-strong); flex:1; }
+  #filesBody{ flex:1; display:flex; gap:14px; min-height:0; }
+  #fileList{ width:250px; flex:none; overflow-y:auto; display:flex; flex-direction:column; gap:3px; }
+  .filerow{ font:12px var(--mono); padding:7px 10px; border-radius:8px; cursor:pointer;
+            border:1px solid transparent; color:var(--dim); display:flex; justify-content:space-between; gap:8px;
+            transition:background .14s, color .14s, border-color .14s; }
+  .filerow:hover{ background:var(--panel2); color:var(--text); }
+  .filerow.on{ background:var(--accent-ghost); border-color:var(--accent-line); color:var(--text-strong); }
+  .filerow .fb{ color:var(--dim2); font-size:10.5px; flex:none; }
+  #filePane{ flex:1; min-width:0; display:flex; flex-direction:column; gap:8px; }
+  #fileView{ flex:1; background:#0a0d12; border:1px solid var(--line); border-radius:11px;
+             padding:12px 14px; font:12px/1.6 var(--mono); white-space:pre; overflow:auto; margin:0; color:#c9d3e0; }
+  #runOut{ background:#0a0d12; border:1px solid var(--line); border-radius:11px; max-height:180px;
+           padding:12px 14px; font:12px/1.6 var(--mono); white-space:pre-wrap; overflow:auto; margin:0; color:#c9d3e0; }
+  #runOut .ok{ color:#46d69a; } #runOut .err{ color:#ff7b7b; }
+
+  /* ---------------- salvar blocos de código (drawer) ---------------- */
+  #drawerBlocks{ border-top:1px solid var(--line-soft); padding:12px 18px; display:flex;
+                 flex-direction:column; gap:8px; }
+  #drawerBlocks .bt{ font:600 11px var(--sans); text-transform:uppercase; letter-spacing:.1em; color:var(--dim); }
+  .blockrow{ display:flex; gap:8px; align-items:center; }
+  .blockrow input{ flex:1; }
+  .blockrow .bl{ font:10.5px var(--mono); color:var(--dim2); flex:none; }
+
   /* ---------------- galeria de templates ---------------- */
   #tplWrap{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:80;
             display:flex; align-items:center; justify-content:center; }
@@ -292,6 +328,7 @@
   <button id="addTextBtn" class="secondary" title="agente que pensa e escreve (não mexe em arquivos)">🧠 Agente de texto</button>
   <button id="addCoderBtn" class="secondary" title="agente que edita arquivos do projeto via Aider">🛠️ Agente codador</button>
   <button id="tplBtn" class="secondary" title="arquiteturas prontas para arrastar e ajustar">📚 Templates</button>
+  <button id="filesBtn" class="secondary" title="arquivos do projeto: ver, rodar, abrir a pasta">📁 Arquivos</button>
   <button id="exportBtn" class="icon-btn" title="baixar o fluxo como JSON">⤓</button>
   <button id="importBtn" class="icon-btn" title="importar um fluxo de um arquivo JSON">⤒</button>
   <input type="file" id="importFile" accept=".json,application/json" class="hidden">
@@ -349,6 +386,25 @@
     <div id="drawerHead"><b id="drawerTitle"></b><button class="icon-btn" id="drawerClose" title="fechar">✕</button></div>
     <div id="drawerMeta"></div>
     <div id="drawerBody"></div>
+    <div id="drawerBlocks" class="hidden"></div>
+  </div>
+</div>
+
+<div id="filesWrap" class="hidden">
+  <div id="filesModal">
+    <div id="filesHead">
+      <h2>📁 Arquivos do projeto</h2>
+      <button id="revealBtn" class="secondary">🗂 Abrir pasta</button>
+      <button id="runFileBtn" class="hidden">▶ Rodar este arquivo</button>
+      <button class="icon-btn" id="filesClose" title="fechar">✕</button>
+    </div>
+    <div id="filesBody">
+      <div id="fileList"></div>
+      <div id="filePane">
+        <pre id="fileView">selecione um arquivo à esquerda</pre>
+        <pre id="runOut" class="hidden"></pre>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -364,6 +420,7 @@ let sel = null;              // {type:"node"|"edge", id}
 let traitsCatalog = [];      // [{key,label,prompt}]
 let modelsCatalog = [];
 let running = false;
+let nodeStats = {};          // id -> texto do badge (custo · tentativas)
 
 const NS = "http://www.w3.org/2000/svg";
 const world = $("world"), wires = $("wires"), canvas = $("canvas");
@@ -468,9 +525,11 @@ function fitView() {
 /* ================= render de nós ================= */
 const NODE_ICO = { text: "🧠", coder: "🛠️" };
 function traitsSummary(n) {
-  if (!n.traits.length) return "sem personalidade definida";
   const lbl = {}; for (const t of traitsCatalog) lbl[t.key] = t.label;
-  return n.traits.map(k => lbl[k] || k).join(" · ");
+  const parts = n.traits.length ? n.traits.map(k => lbl[k] || k) : ["sem personalidade definida"];
+  if (n.memory) parts.push("🧠 lembra");
+  if (n.save_files) parts.push("💾 gera arquivos");
+  return parts.join(" · ");
 }
 function renderNode(n) {
   let el = nodeEls.get(n.id);
@@ -480,7 +539,7 @@ function renderNode(n) {
     el.dataset.id = n.id;
     el.innerHTML = `
       <div class="node-head"><span class="node-ico"></span><span class="node-name"></span></div>
-      <div class="node-body"><span class="node-model"></span><span class="node-traits"></span></div>
+      <div class="node-body"><span class="node-model"></span><span class="node-traits"></span><span class="node-stats"></span></div>
       <div class="port port-in" title="entrada"></div>
       <div class="port port-out" title="saída — arraste até outro nó"></div>`;
     world.appendChild(el);
@@ -495,6 +554,7 @@ function renderNode(n) {
   el.querySelector(".node-name").textContent = n.name;
   el.querySelector(".node-model").textContent = (n.model || "").split("/").pop();
   el.querySelector(".node-traits").textContent = traitsSummary(n);
+  el.querySelector(".node-stats").textContent = nodeStats[n.id] || "";
 }
 function renderNodes() {
   for (const [id, el] of [...nodeEls]) {
@@ -804,6 +864,10 @@ function renderInspector() {
     <label>Arquivos-alvo (um por linha, opcional)</label>
     <textarea id="i_files" placeholder="ex.: app/main.py">${esc(n.files.join("\n"))}</textarea>` : ""}
     <label class="check" style="margin-top:14px"><input type="checkbox" id="i_task" ${n.include_task ? "checked" : ""}> recebe a tarefa original</label>
+    ${n.type === "text" ? `
+    <label class="check" style="margin-top:8px" title="o agente vê as conversas anteriores dele nas próximas execuções"><input type="checkbox" id="i_memory" ${n.memory ? "checked" : ""}> 🧠 lembrar conversas (memória)</label>
+    ${st && st.memory_counts && st.memory_counts[n.id] ? `<div class="row" style="margin-top:6px"><span class="muted">🧠 ${st.memory_counts[n.id]} conversa(s) lembrada(s)</span><button class="secondary" id="i_clearMem" style="padding:4px 10px;font-size:11px">limpar</button></div>` : ""}
+    <label class="check" style="margin-top:8px" title="blocos de código com nome detectável na resposta viram arquivos reais no projeto"><input type="checkbox" id="i_save" ${n.save_files ? "checked" : ""}> 💾 salvar blocos de código como arquivos</label>` : ""}
     <details style="margin-top:12px"><summary>ver prompt final</summary><div id="promptPreview"></div></details>
     <label></label>
     ${st && st.node_status[n.id] && st.node_status[n.id] !== "pending" ? `<button class="secondary" id="i_output" style="margin-bottom:8px">📄 Ver resposta</button>` : ""}
@@ -816,6 +880,15 @@ function renderInspector() {
   const filesEl = $("i_files");
   if (filesEl) filesEl.oninput = (ev) => { n.files = ev.target.value.split("\n").map(s => s.trim()).filter(Boolean); scheduleSave(); };
   $("i_task").onchange = (ev) => { n.include_task = ev.target.checked; scheduleSave(); };
+  const memEl = $("i_memory");
+  if (memEl) memEl.onchange = (ev) => { n.memory = ev.target.checked; upd(); };
+  const saveEl = $("i_save");
+  if (saveEl) saveEl.onchange = (ev) => { n.save_files = ev.target.checked; upd(); };
+  const clearMemBtn = $("i_clearMem");
+  if (clearMemBtn) clearMemBtn.onclick = async () => {
+    const r = await post("/api/memory/clear", { node_id: n.id });
+    if (r) { if (st) st.memory_counts = r.memory_counts; toast("memória do agente limpa", "ok"); renderInspector(); }
+  };
   const outBtn = $("i_output");
   if (outBtn) outBtn.onclick = () => openDrawer(n.id);
   $("i_delNode").onclick = deleteSelection;
@@ -898,9 +971,20 @@ function resolvePending(nodeId) {
 }
 function money(v) { return "$" + (+v).toFixed(4); }
 
+function setNodeStats(id, text) {
+  nodeStats[id] = text;
+  const el = nodeEls.get(id);
+  if (el) el.querySelector(".node-stats").textContent = text;
+}
+
 function handleEvent(ev) {
   const k = ev.kind;
-  if (k === "run_start") { clearFeed(); pushFeed("🚀", "execução começou", "run", null, "__run__"); }
+  if (k === "run_start") {
+    clearFeed();
+    nodeStats = {};
+    for (const [, el] of nodeEls) el.querySelector(".node-stats").textContent = "";
+    pushFeed("🚀", "execução começou", "run", null, "__run__");
+  }
   else if (k === "node_start") {
     const n = nodeById(ev.node_id);
     pushFeed(n && n.type === "coder" ? "🛠️" : "🧠", `${ev.name} começou a pensar…`, "run", null, ev.node_id);
@@ -908,8 +992,14 @@ function handleEvent(ev) {
       const rec = edgeEls.get(e.id); if (rec) rec.wire.classList.add("flow");
     }
   }
+  else if (k === "node_retry") {
+    pushFeed("🔁", `${ev.name} falhou (${ev.error}) — tentativa ${ev.attempt} de ${ev.max_attempts}…`, "warn");
+    setNodeStats(ev.node_id, `tentativa ${ev.attempt}…`);
+  }
   else if (k === "node_output") {
     resolvePending(ev.node_id);
+    setNodeStats(ev.node_id, money(ev.cost_usd) + (ev.attempts > 1 ? ` · ${ev.attempts} tent.` : ""));
+    for (const f of (ev.files_saved || [])) pushFeed("💾", `${ev.name} salvou ${f}`, "ok");
     pushFeed("💬", `${ev.name} respondeu (${ev.tokens_out} tokens · ${money(ev.cost_usd)}) — clique para ler`, "ok", ev.node_id);
     for (const e of graph.edges) {
       const rec = edgeEls.get(e.id);
@@ -920,6 +1010,7 @@ function handleEvent(ev) {
   }
   else if (k === "node_error") {
     resolvePending(ev.node_id);
+    setNodeStats(ev.node_id, ev.attempts > 1 ? `falhou · ${ev.attempts} tent.` : "falhou");
     pushFeed("❌", `${ev.name} falhou: ${ev.error}`, "err", ev.node_id);
     stopFlows(ev.node_id);
   }
@@ -981,10 +1072,40 @@ async function openDrawer(nodeId) {
     if (d.cost_usd) meta.push(money(d.cost_usd));
     if (d.duration_s) meta.push(d.duration_s + "s");
     if (d.commit_sha) meta.push("commit " + String(d.commit_sha).slice(0, 8));
+    if (d.attempts > 1) meta.push(d.attempts + " tentativas");
     $("drawerMeta").textContent = meta.join("   ·   ") || "—";
     $("drawerBody").textContent = d.error && !d.text ? d.error : d.text;
     $("drawerWrap").classList.remove("hidden");
+    renderDrawerBlocks(nodeId, d.text);
   } catch (e) { toast("não consegui buscar a saída", "err"); }
+}
+
+/* blocos de código detectados na resposta → salvar como arquivo de verdade */
+async function renderDrawerBlocks(nodeId, text) {
+  const box = $("drawerBlocks");
+  box.classList.add("hidden");
+  box.innerHTML = "";
+  if (!text || !text.includes("```")) return;
+  let blocks;
+  try { blocks = await fetch("/api/output/" + encodeURIComponent(nodeId) + "/blocks").then(r => r.json()); }
+  catch (e) { return; }
+  if (!Array.isArray(blocks) || !blocks.length) return;
+  box.innerHTML = `<div class="bt">💾 Blocos de código detectados — salvar no projeto</div>` + blocks.map((b, i) => `
+    <div class="blockrow" data-i="${i}">
+      <span class="bl">${esc(b.lang || "?")} · ${b.lines} linhas</span>
+      <input value="${esc(b.suggested)}" spellcheck="false">
+      <button class="secondary bsave">salvar</button>
+    </div>`).join("");
+  box.querySelectorAll(".blockrow").forEach(row => {
+    row.querySelector(".bsave").onclick = async () => {
+      const i = +row.dataset.i;
+      const path = row.querySelector("input").value.trim();
+      if (!path) return;
+      const r = await post("/api/save-file", { path, content: blocks[i].code });
+      if (r) { toast("salvo: " + r.path + " — veja em 📁 Arquivos", "ok"); row.querySelector(".bsave").textContent = "✔ salvo"; }
+    };
+  });
+  box.classList.remove("hidden");
 }
 $("drawerClose").onclick = () => $("drawerWrap").classList.add("hidden");
 $("drawerWrap").addEventListener("pointerdown", (ev) => { if (ev.target === $("drawerWrap")) $("drawerWrap").classList.add("hidden"); });
@@ -995,6 +1116,62 @@ world.addEventListener("dblclick", (ev) => {
   const nd = ev.target.closest ? ev.target.closest(".node") : null;
   if (nd && st && st.node_status[nd.dataset.id] && st.node_status[nd.dataset.id] !== "pending") openDrawer(nd.dataset.id);
 });
+
+/* ---- painel de arquivos ---- */
+let currentFile = null;
+$("filesBtn").onclick = async () => {
+  await refreshFiles();
+  $("filesWrap").classList.remove("hidden");
+};
+async function refreshFiles() {
+  let data;
+  try { data = await fetch("/api/files").then(r => r.json()); }
+  catch (e) { toast("não consegui listar os arquivos", "err"); return; }
+  const list = $("fileList");
+  if (!data.files.length) {
+    list.innerHTML = `<div class="muted" style="padding:8px">nenhum arquivo no projeto ainda</div>`;
+  } else {
+    list.innerHTML = data.files.map(f => `
+      <div class="filerow${currentFile === f.path ? " on" : ""}" data-path="${esc(f.path)}">
+        <span>${esc(f.path)}</span><span class="fb">${(f.bytes / 1024).toFixed(1)}kb</span>
+      </div>`).join("");
+    list.querySelectorAll(".filerow").forEach(row => { row.onclick = () => openFile(row.dataset.path); });
+  }
+}
+async function openFile(path) {
+  let d;
+  try {
+    const r = await fetch("/api/file?path=" + encodeURIComponent(path));
+    if (!r.ok) { toast("não consegui abrir o arquivo", "err"); return; }
+    d = await r.json();
+  } catch (e) { return; }
+  currentFile = path;
+  $("fileList").querySelectorAll(".filerow").forEach(row =>
+    row.classList.toggle("on", row.dataset.path === path));
+  $("fileView").textContent = d.content + (d.truncated ? "\n\n… (arquivo grande, mostrando o começo)" : "");
+  $("runOut").classList.add("hidden");
+  $("runFileBtn").classList.toggle("hidden", !path.endsWith(".py"));
+};
+$("runFileBtn").onclick = async () => {
+  if (!currentFile) return;
+  const btn = $("runFileBtn");
+  btn.disabled = true; btn.textContent = "⏳ rodando…";
+  const r = await post("/api/run-file", { path: currentFile });
+  btn.disabled = false; btn.textContent = "▶ Rodar este arquivo";
+  if (!r) return;
+  const out = $("runOut");
+  out.classList.remove("hidden");
+  const status = r.timed_out ? "⏱ timeout" : (r.returncode === 0 ? "✔ saiu com código 0" : "✘ saiu com código " + r.returncode);
+  out.innerHTML = `<span class="${r.returncode === 0 && !r.timed_out ? "ok" : "err"}">${status}</span>\n` +
+    esc(r.stdout || "") + (r.stderr ? `\n<span class="err">${esc(r.stderr)}</span>` : "");
+};
+$("revealBtn").onclick = async () => {
+  const r = await post("/api/reveal");
+  if (r) toast("pasta aberta no explorador", "ok");
+};
+$("filesClose").onclick = () => $("filesWrap").classList.add("hidden");
+$("filesWrap").addEventListener("pointerdown", (ev) => { if (ev.target === $("filesWrap")) $("filesWrap").classList.add("hidden"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("filesWrap").classList.add("hidden"); });
 
 /* ---- polling ---- */
 const PHASE_LABEL = { idle: "pronto", running: "rodando", waiting_approval: "aguardando você",
