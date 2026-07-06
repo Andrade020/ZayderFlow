@@ -22,7 +22,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ValidationError
 
 from .codeblocks import extract_code_blocks, resolve_within, suggest_filename
-from .config import Settings, load_api_keys, save_api_key
+from .config import Settings, load_api_keys, load_settings, save_api_key
 from .executor import CoderFn, GraphExecutor, TextFn
 from .gallery import list_templates, load_template
 from .models import Graph, RunReport, validate_runnable
@@ -102,6 +102,35 @@ class FlowManager:
             raise RuntimeError("não dá para editar o grafo com uma execução em andamento")
         self.graph = graph
         save_graph(graph, self.settings.resolved_project_dir())
+
+    # -- projeto -------------------------------------------------------------
+    def switch_project(self, path: str, create: bool = False) -> None:
+        """Troca o diretório de destino (o "repo") em tempo de execução.
+
+        Recarrega grafo, config e memória do diretório novo; o estado da
+        execução anterior é descartado (o seq segue monotônico).
+        """
+        if self.phase in BUSY_PHASES:
+            raise RuntimeError("não dá para trocar de projeto com uma execução em andamento")
+        p = Path(path).expanduser()
+        if not p.is_dir():
+            if not create:
+                raise FileNotFoundError(f"o diretório não existe: {p}")
+            p.mkdir(parents=True, exist_ok=True)
+        self.settings = load_settings(p)
+        self.graph = load_graph(self.settings.resolved_project_dir())
+        self.memory = load_memory(self.settings.resolved_project_dir())
+        self.phase = "idle"
+        self.task = ""
+        self.error = ""
+        self.pending_approval = ""
+        self.report = None
+        self.node_status = {}
+        with self.lock:
+            self.events = []
+            self.tokens_in = 0
+            self.tokens_out = 0
+            self.by_model = {}
 
     # -- memória -------------------------------------------------------------
     def clear_memory(self, node_id: str | None = None) -> None:
@@ -257,6 +286,11 @@ class MemoryClearBody(BaseModel):
     node_id: str | None = None  # None = limpa a memória de todos os agentes
 
 
+class ProjectDirBody(BaseModel):
+    path: str
+    create: bool = False  # cria a pasta se não existir
+
+
 class SaveFileBody(BaseModel):
     path: str
     content: str
@@ -367,6 +401,24 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
         except RuntimeError as exc:
             raise HTTPException(409, detail=str(exc))
         return graph.model_dump(mode="json")
+
+    @app.post("/api/project-dir")
+    def project_dir(body: ProjectDirBody):
+        if not body.path.strip():
+            raise HTTPException(422, detail="informe um caminho")
+        try:
+            manager.switch_project(body.path.strip(), create=body.create)
+        except RuntimeError as exc:
+            raise HTTPException(409, detail=str(exc))
+        except FileNotFoundError as exc:
+            raise HTTPException(404, detail=str(exc))
+        except OSError as exc:
+            raise HTTPException(422, detail=f"não consegui usar esse diretório: {exc}")
+        return {
+            "ok": True,
+            "project_dir": str(manager.settings.resolved_project_dir()),
+            "graph": manager.graph.model_dump(mode="json"),
+        }
 
     @app.post("/api/memory/clear")
     def memory_clear(body: MemoryClearBody):

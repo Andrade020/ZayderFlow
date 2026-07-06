@@ -167,6 +167,48 @@ def test_approve_without_pending_is_409(client):
     assert client.post("/api/approve", json={"decision": "approve"}).status_code == 409
 
 
+def test_switch_project_dir(client, tmp_path, diamond_graph):
+    _put_graph(client, diamond_graph)
+    other = tmp_path / "outro_projeto"
+    other.mkdir()
+    r = client.post("/api/project-dir", json={"path": str(other)})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["project_dir"] == str(other.resolve())
+    assert d["graph"]["nodes"] == []  # projeto novo, grafo vazio
+    st = client.get("/api/state").json()
+    assert st["project_dir"] == str(other.resolve())
+    # salvar um grafo agora escreve no projeto novo
+    _put_graph(client, diamond_graph)
+    assert (other / ".zflow" / "graph.json").is_file()
+
+
+def test_switch_project_dir_missing_404_and_create(client, tmp_path):
+    novo = tmp_path / "nao_existe" / "temp_cobrinha"
+    r = client.post("/api/project-dir", json={"path": str(novo)})
+    assert r.status_code == 404
+    r = client.post("/api/project-dir", json={"path": str(novo), "create": True})
+    assert r.status_code == 200
+    assert novo.is_dir()
+
+
+def test_switch_project_dir_blocked_while_running(client, diamond_graph):
+    client.app.state.manager.phase = "running"
+    r = client.post("/api/project-dir", json={"path": "."})
+    assert r.status_code == 409
+    client.app.state.manager.phase = "idle"
+
+
+def test_switch_project_loads_that_dirs_graph(client, tmp_path, diamond_graph):
+    from zflow.store import save_graph
+
+    other = tmp_path / "com_grafo"
+    other.mkdir()
+    save_graph(diamond_graph, other)
+    d = client.post("/api/project-dir", json={"path": str(other)}).json()
+    assert [n["id"] for n in d["graph"]["nodes"]] == ["a", "b", "c", "d"]
+
+
 def test_memory_persists_and_clears(project_dir, diamond_graph):
     from zflow.models import Graph
     from zflow.store import load_memory

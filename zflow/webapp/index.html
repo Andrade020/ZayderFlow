@@ -82,6 +82,11 @@
   .icon-btn:active{ transform:translateY(1px); }
   .saved-tag{ font:11px var(--sans); color:var(--ok-2); opacity:0; transition:opacity .3s; }
   .saved-tag.show{ opacity:1; }
+  #projBtn{ background:none; border:1px solid transparent; color:var(--dim); font:12px/1 var(--mono);
+            cursor:pointer; padding:6px 9px; max-width:34vw; overflow:hidden; text-overflow:ellipsis;
+            white-space:nowrap; display:inline-flex; align-items:center; gap:6px; border-radius:9px;
+            transition:color .15s, background .15s, border-color .15s; box-shadow:none; }
+  #projBtn:hover{ color:var(--text); background:var(--panel2); border-color:var(--line); filter:none; }
 
   /* ---------------- toolbar ---------------- */
   #toolbar{ display:flex; align-items:center; gap:8px; padding:8px 16px;
@@ -327,6 +332,7 @@
   <input id="graphName" title="nome do fluxo" spellcheck="false">
   <span id="savedTag" class="saved-tag">✔ salvo</span>
   <span class="grow"></span>
+  <button id="projBtn" title="diretório onde os agentes leem e salvam arquivos — clique para trocar">📂 …</button>
   <span id="phaseBadge" class="badge">pronto</span>
   <span id="cost" class="hidden"></span>
   <span id="savings" class="savings hidden"></span>
@@ -1201,6 +1207,46 @@ world.addEventListener("dblclick", (ev) => {
   if (nd && st && st.node_status[nd.dataset.id] && st.node_status[nd.dataset.id] !== "pending") openDrawer(nd.dataset.id);
 });
 
+/* ---- trocar o diretório do projeto ---- */
+$("projBtn").onclick = async () => {
+  if (running) { toast("aguarde a execução terminar para trocar de projeto", "warn"); return; }
+  const cur = (st && st.project_dir) || "";
+  const path = prompt(
+    "Diretório do projeto (onde os agentes leem e salvam arquivos).\n" +
+    "Ex.: C:\\Users\\voce\\Desktop\\temp_cobrinha — se não existir, eu pergunto se crio.",
+    cur);
+  if (path === null || !path.trim() || path.trim() === cur) return;
+  await switchProject(path.trim(), false);
+};
+async function switchProject(path, create) {
+  let r;
+  try {
+    r = await fetch("/api/project-dir", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path, create }) });
+  } catch (e) { toast("não consegui falar com o servidor", "err"); return; }
+  if (r.status === 404 && !create) {
+    if (confirm("Essa pasta não existe. Quer que eu crie?")) return switchProject(path, true);
+    return;
+  }
+  if (!r.ok) {
+    const d = await r.json().catch(() => ({}));
+    toast(d.detail || ("erro " + r.status), "err");
+    return;
+  }
+  const d = await r.json();
+  graph = d.graph;
+  if (st) st.project_dir = d.project_dir;
+  $("projBtn").textContent = "📂 " + d.project_dir;
+  $("graphName").value = graph.name || "sem título";
+  currentFile = null;
+  clearFeed();
+  nodeStats = {};
+  select(null);
+  renderAll();
+  if (graph.nodes.length) fitView();
+  toast("projeto agora é " + d.project_dir, "ok");
+}
+
 /* ---- painel de arquivos ---- */
 let currentFile = null;
 $("filesBtn").onclick = async () => {
@@ -1294,6 +1340,9 @@ async function doTick() {
   const badge = $("phaseBadge");
   badge.textContent = PHASE_LABEL[st.phase] || st.phase;
   badge.className = "badge " + st.phase;
+
+  const pb = $("projBtn"), pdir = "📂 " + st.project_dir;
+  if (pb.textContent !== pdir) pb.textContent = pdir;
 
   applyStatuses(st.node_status);
 
