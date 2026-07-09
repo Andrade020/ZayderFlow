@@ -341,3 +341,137 @@ def test_events_after_reset_are_visible_to_stale_client(client, diamond_graph):
     kinds = [e["kind"] for e in events]
     assert "run_start" in kinds and "run_done" in kinds
     assert kinds.count("node_output") == 4
+
+
+# ---------------------------------------------------------------- novos tipos
+
+
+def test_human_input_flow_end_to_end(client):
+    from zflow.models import Edge, Graph, Node
+
+    g = Graph(nodes=[
+        Node(id="h", type="human", name="Você", extra_prompt="Aprova?"),
+        Node(id="b", name="Resumidor"),
+    ], edges=[Edge(id="e1", source="h", target="b")])
+    _put_graph(client, g)
+    client.post("/api/run", json={"task": "t"})
+    # espera o cartão de input aparecer
+    deadline = time.monotonic() + 8
+    st = None
+    while time.monotonic() < deadline:
+        st = client.get("/api/state").json()
+        if st["pending_inputs"]:
+            break
+        time.sleep(0.02)
+    assert st["pending_inputs"], "o nó humano não pediu input"
+    p = st["pending_inputs"][0]
+    assert p["node_id"] == "h" and p["question"] == "Aprova?"
+    # responder um nó que não está esperando é 404
+    assert client.post("/api/input", json={"node_id": "zzz", "text": "x"}).status_code == 404
+    r = client.post("/api/input", json={"node_id": "h", "text": "sim, aprovado"})
+    assert r.status_code == 200
+    st = wait_phase(client, "done")
+    assert st["pending_inputs"] == []
+    out = client.get("/api/output/h").json()
+    assert out["text"] == "sim, aprovado"
+
+
+def test_abort_releases_pending_human(client):
+    from zflow.models import Graph, Node
+
+    g = Graph(nodes=[Node(id="h", type="human", name="Você")])
+    _put_graph(client, g)
+    client.post("/api/run", json={"task": "t"})
+    deadline = time.monotonic() + 8
+    while time.monotonic() < deadline:
+        if client.get("/api/state").json()["pending_inputs"]:
+            break
+        time.sleep(0.02)
+    client.post("/api/abort")
+    st = wait_phase(client, "done", "error")
+    assert st["pending_inputs"] == []
+
+
+def test_feedback_endpoints(client, diamond_graph):
+    _put_graph(client, diamond_graph)
+    r = client.post("/api/feedback", json={"node_ids": ["a", "b"], "text": "seja objetivo"})
+    assert r.status_code == 200
+    fb = r.json()["feedback"]
+    assert fb["a"] == ["seja objetivo"] and fb["b"] == ["seja objetivo"]
+    assert client.get("/api/state").json()["feedback"]["a"] == ["seja objetivo"]
+    # limpar um personagem
+    r = client.post("/api/feedback/clear", json={"node_id": "a"})
+    assert "a" not in r.json()["feedback"]
+    assert r.json()["feedback"]["b"] == ["seja objetivo"]
+    # limpar tudo
+    assert client.post("/api/feedback/clear", json={}).json()["feedback"] == {}
+    # validações
+    assert client.post("/api/feedback", json={"node_ids": [], "text": "x"}).status_code == 422
+    assert client.post("/api/feedback", json={"node_ids": ["a"], "text": " "}).status_code == 422
+
+
+def test_feedback_reaches_the_agent(client, diamond_graph):
+    seen = {}
+
+    def spy_fn(node, user_msg, settings, history=None):
+        seen[node.id] = user_msg
+        return NodeOutput(node_id=node.id, text="ok", cost_usd=0.001)
+
+    from zflow.server import create_app as mk
+    app = mk(Settings(project_dir=client.app.state.manager.settings.project_dir),
+             text_fn=spy_fn)
+    c2 = TestClient(app)
+    _put_graph(c2, diamond_graph)
+    c2.post("/api/feedback", json={"node_ids": ["a"], "text": "responda em uma linha"})
+    c2.post("/api/run", json={"task": "t"})
+    wait_phase(c2, "done")
+    assert "responda em uma linha" in seen["a"]
+    assert "Feedback" not in seen["b"]
+
+
+def test_settings_endpoints(client):
+    d = client.get("/api/settings").json()
+    assert d["auto_save_code"] is False
+    assert any(k["name"] == "DEEPSEEK_API_KEY" for k in d["keys"])
+    r = client.post("/api/settings", json={"auto_save_code": True, "max_attempts": 3})
+    assert r.status_code == 200
+    d = client.get("/api/settings").json()
+    assert d["auto_save_code"] is True and d["max_attempts"] == 3
+    # persistiu na config do projeto
+    mgr = client.app.state.manager
+    assert mgr.settings.auto_save_code is True
+
+
+def test_loop_run_maps_status_to_drawn_nodes(client):
+    from zflow.models import Edge, Graph, Node
+
+    g = Graph(nodes=[
+        Node(id="g", name="Gerador"),
+        Node(id="c", name="Crítico"),
+    ], edges=[
+        Edge(id="e1", source="g", target="c"),
+        Edge(id="e2", source="c", target="g", kind="loop", rounds=2),
+    ])
+    _put_graph(client, g)
+    client.post("/api/run", json={"task": "t"})
+    st = wait_phase(client, "done")
+    # status só das caixinhas desenhadas (sem g~2 fantasma)
+    assert set(st["node_status"]) == {"g", "c"}
+    assert set(st["node_status"].values()) == {"done"}
+    # /api/output/g resolve para a ÚLTIMA rodada
+    events = client.get("/api/state?since=0").json()["events"]
+    outs = [e["node_id"] for e in events if e["kind"] == "node_output"]
+    assert set(outs) == {"g", "c", "g~2", "c~2"}
+    assert client.get("/api/output/g").status_code == 200
+    assert client.get("/api/output/g~2").status_code == 200
+
+
+def test_run_with_bad_loop_is_422(client):
+    from zflow.models import Edge, Graph, Node
+
+    g = Graph(nodes=[Node(id="a", name="A"), Node(id="b", name="B")],
+              edges=[Edge(id="e1", source="a", target="b", kind="loop", rounds=2)])
+    _put_graph(client, g)
+    r = client.post("/api/run", json={"task": "t"})
+    assert r.status_code == 422
+    assert "ANTERIOR" in r.json()["detail"]

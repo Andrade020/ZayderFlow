@@ -25,7 +25,8 @@ from .codeblocks import extract_code_blocks, resolve_within, suggest_filename
 from .config import Settings, load_api_keys, load_settings, save_api_key
 from .executor import CoderFn, GraphExecutor, TextFn
 from .gallery import list_templates, load_template
-from .models import Graph, RunReport, persona_key, validate_runnable
+from .looping import base_id, expand_loops
+from .models import Graph, Node, RunReport, persona_key, validate_runnable
 from .presets import all_presets
 from .pricing import PRICES_PER_M, cost_for, opus_equiv_usd
 from .store import load_graph, load_memory, save_graph, save_memory
@@ -40,6 +41,13 @@ _FILES_SKIP_DIRS = {".git", ".zflow", ".zayder", "__pycache__", ".venv", "venv",
                     "*.egg-info"}
 FILE_VIEW_MAX_CHARS = 40_000
 RUN_OUTPUT_MAX_CHARS = 20_000
+INPUT_CONTEXT_MAX_CHARS = 4_000  # contexto mostrado no cartão "responda você"
+
+# provedores comuns no ⚙️ Setup (qualquer outra variável pode ser salva também)
+KNOWN_API_KEYS = [
+    "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "XAI_API_KEY",
+]
 
 
 def _open_path(path: Path) -> None:
@@ -81,6 +89,14 @@ class FlowManager:
         self.tokens_in = 0
         self.tokens_out = 0
         self.by_model: dict[str, list[int]] = {}
+        # nós 👤 esperando resposta do usuário: node_id -> {name, question, context, event, response}
+        self.pending_inputs: dict[str, dict] = {}
+        # feedback do usuário por personagem (persona key) — injetado nas
+        # próximas chamadas daquele personagem até ser apagado
+        self.feedback: dict[str, list[str]] = {}
+        # grafo expandido (loops desenrolados) da execução atual — os eventos
+        # usam os ids dele; a UI só conhece o grafo desenhado
+        self._exec_graph: Graph | None = None
 
     # -- eventos ----------------------------------------------------------
     def emit(self, kind: str, **data) -> None:
@@ -131,6 +147,7 @@ class FlowManager:
             self.tokens_in = 0
             self.tokens_out = 0
             self.by_model = {}
+            self.feedback = {}  # feedback é por personagem — projeto novo, elenco novo
 
     # -- memória -------------------------------------------------------------
     def clear_memory(self, node_id: str | None = None) -> None:
@@ -142,11 +159,65 @@ class FlowManager:
             self.memory.pop(persona_key(node) if node else node_id, None)
         save_memory(self.memory, self.settings.resolved_project_dir())
 
+    # -- input humano (nó 👤) -------------------------------------------------
+    def _ask_input(self, node: Node, question: str, context: str) -> str | None:
+        """Chamado pela thread do executor: pausa o nó até o usuário responder."""
+        ready = threading.Event()
+        entry = {"node_id": node.id, "name": node.name, "question": question,
+                 "context": context[:INPUT_CONTEXT_MAX_CHARS],
+                 "event": ready, "response": None}
+        with self.lock:
+            self.pending_inputs[node.id] = entry
+        self.emit("input_needed", node_id=node.id, name=node.name, question=question)
+        ready.wait()
+        with self.lock:
+            self.pending_inputs.pop(node.id, None)
+        return entry["response"]
+
+    def provide_input(self, node_id: str, text: str) -> None:
+        entry = self.pending_inputs.get(node_id)
+        if not entry:
+            raise KeyError("esse agente não está esperando resposta")
+        entry["response"] = text
+        entry["event"].set()
+
+    def _release_inputs(self) -> None:
+        """Solta todos os nós 👤 pendurados (abort): resposta None = abortado."""
+        with self.lock:
+            entries = list(self.pending_inputs.values())
+        for e in entries:
+            e["response"] = None
+            e["event"].set()
+
+    # -- feedback do usuário para os agentes ----------------------------------
+    def add_feedback(self, node_ids: list[str], text: str) -> None:
+        keys: set[str] = set()
+        for nid in node_ids:
+            node = next((n for n in self.graph.nodes if n.id == nid), None)
+            keys.add(persona_key(node) if node else nid)
+        with self.lock:
+            for k in keys:
+                self.feedback.setdefault(k, []).append(text)
+
+    def clear_feedback(self, node_id: str | None = None) -> None:
+        with self.lock:
+            if node_id is None:
+                self.feedback.clear()
+            else:
+                node = next((n for n in self.graph.nodes if n.id == node_id), None)
+                self.feedback.pop(persona_key(node) if node else node_id, None)
+
+    def _feedback_for(self, pkey: str) -> list[str]:
+        with self.lock:
+            return list(self.feedback.get(pkey, []))
+
     # -- execução -----------------------------------------------------------
     def start_run(self, task: str) -> None:
         if self.phase in BUSY_PHASES:
             raise RuntimeError("já tem uma execução em andamento")
-        validate_runnable(self.graph)
+        expanded = expand_loops(self.graph)  # setas 🔁 viram rodadas clonadas
+        validate_runnable(expanded)
+        self._exec_graph = expanded
         self.task = task
         self.error = ""
         self.pending_approval = ""
@@ -163,7 +234,11 @@ class FlowManager:
         threading.Thread(target=self._run_worker, args=(task,), daemon=True).start()
 
     def _emit_from_run(self, kind: str, **data) -> None:
-        """Executor → UI: espelha o status por nó e registra tokens antes de emitir."""
+        """Executor → UI: espelha o status por nó e registra tokens antes de emitir.
+
+        Ids de rodadas de loop ("n3~2") mapeiam para a caixinha desenhada (n3):
+        o nó reacende no canvas a cada rodada.
+        """
         nid = data.get("node_id")
         if nid:
             status = {
@@ -173,10 +248,11 @@ class FlowManager:
                 "node_skipped": "skipped",
             }.get(kind)
             if status:
-                self.node_status[nid] = status
+                self.node_status[base_id(nid)] = status
         if kind == "node_output":
-            node = next((n for n in self.graph.nodes if n.id == nid), None)
-            if node:
+            exec_graph = self._exec_graph or self.graph
+            node = next((n for n in exec_graph.nodes if n.id == nid), None)
+            if node and node.model:
                 self.record_tokens(node.model, data.get("tokens_in", 0), data.get("tokens_out", 0))
         self.emit(kind, **data)
 
@@ -198,7 +274,7 @@ class FlowManager:
 
     def _run_worker(self, task: str) -> None:
         executor = GraphExecutor(
-            self.graph,
+            self._exec_graph or self.graph,
             self.settings,
             emit=self._emit_from_run,
             text_fn=self.text_fn,
@@ -206,6 +282,8 @@ class FlowManager:
             gate=self._gate,
             memory=self.memory,
             memory_save=lambda: save_memory(self.memory, self.settings.resolved_project_dir()),
+            input_fn=self._ask_input,
+            feedback_fn=self._feedback_for,
         )
         self.executor = executor
         try:
@@ -224,6 +302,7 @@ class FlowManager:
             ex.request_abort()
         if self.phase == "waiting_approval":
             self.decide("abort")
+        self._release_inputs()  # nós 👤 pendurados acordam e são pulados
 
     def reset(self) -> None:
         if self.phase in BUSY_PHASES:
@@ -257,6 +336,12 @@ class FlowManager:
                 "pending_approval": self.pending_approval,
                 "graph": self.graph.model_dump(mode="json"),
                 "node_status": dict(self.node_status),
+                "pending_inputs": [
+                    {"node_id": e["node_id"], "name": e["name"],
+                     "question": e["question"], "context": e["context"]}
+                    for e in self.pending_inputs.values()
+                ],
+                "feedback": {k: list(v) for k, v in self.feedback.items() if v},
                 "memory_counts": {k: len(v) for k, v in self.memory.items() if v},
                 "tokens_in": self.tokens_in,
                 "tokens_out": self.tokens_out,
@@ -305,6 +390,46 @@ class SaveFileBody(BaseModel):
 
 class RunFileBody(BaseModel):
     path: str
+
+
+class InputBody(BaseModel):
+    node_id: str
+    text: str = ""
+
+
+class FeedbackBody(BaseModel):
+    node_ids: list[str]
+    text: str
+
+
+class FeedbackClearBody(BaseModel):
+    node_id: str | None = None  # None = apaga o feedback de todos
+
+
+class SettingsBody(BaseModel):
+    auto_save_code: bool | None = None
+    node_timeout_s: int | None = None
+    max_attempts: int | None = None
+
+
+def _resolve_output(report: RunReport | None, node_id: str):
+    """Saída de um nó; para nó que rodou em loop, a da ÚLTIMA rodada."""
+    if report is None:
+        return None
+    out = report.outputs.get(node_id)
+    if out is not None:
+        return out
+    best_round, best = -1, None
+    prefix = node_id + "~"
+    for key, candidate in report.outputs.items():
+        if key.startswith(prefix):
+            try:
+                k = int(key[len(prefix):])
+            except ValueError:
+                continue
+            if k > best_round:
+                best_round, best = k, candidate
+    return best
 
 
 def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
@@ -389,7 +514,7 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
     def output(node_id: str):
         ex = manager.executor
         report = (ex.report if ex else None) or manager.report
-        out = report.outputs.get(node_id) if report else None
+        out = _resolve_output(report, node_id)
         if out is None:
             raise HTTPException(404, detail="esse agente ainda não produziu saída")
         return out.model_dump(mode="json")
@@ -428,6 +553,58 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
             "graph": manager.graph.model_dump(mode="json"),
         }
 
+    @app.post("/api/input")
+    def human_input(body: InputBody):
+        try:
+            manager.provide_input(body.node_id, body.text)
+        except KeyError as exc:
+            raise HTTPException(404, detail=str(exc.args[0]))
+        return {"ok": True}
+
+    @app.post("/api/feedback")
+    def feedback_add(body: FeedbackBody):
+        if not body.text.strip():
+            raise HTTPException(422, detail="escreva o feedback")
+        if not body.node_ids:
+            raise HTTPException(422, detail="selecione pelo menos um agente")
+        manager.add_feedback(body.node_ids, body.text.strip())
+        return {"ok": True, "feedback": {k: list(v) for k, v in manager.feedback.items() if v}}
+
+    @app.post("/api/feedback/clear")
+    def feedback_clear(body: FeedbackClearBody):
+        manager.clear_feedback(body.node_id)
+        return {"ok": True, "feedback": {k: list(v) for k, v in manager.feedback.items() if v}}
+
+    @app.get("/api/settings")
+    def settings_get():
+        s = manager.settings
+        return {
+            "auto_save_code": s.auto_save_code,
+            "node_timeout_s": s.node_timeout_s,
+            "max_attempts": s.max_attempts,
+            "project_dir": str(s.resolved_project_dir()),
+            "keys": [
+                {"name": name, "set": bool(os.environ.get(name)),
+                 "tail": (os.environ.get(name) or "")[-4:] if os.environ.get(name) else ""}
+                for name in KNOWN_API_KEYS
+            ],
+        }
+
+    @app.post("/api/settings")
+    def settings_set(body: SettingsBody):
+        s = manager.settings
+        if body.auto_save_code is not None:
+            s.auto_save_code = body.auto_save_code
+        if body.node_timeout_s is not None:
+            s.node_timeout_s = max(10, body.node_timeout_s)
+        if body.max_attempts is not None:
+            s.max_attempts = max(1, min(5, body.max_attempts))
+        try:
+            s.save()
+        except OSError:
+            pass  # projeto somente leitura: vale para a sessão mesmo assim
+        return {"ok": True}
+
     @app.post("/api/memory/clear")
     def memory_clear(body: MemoryClearBody):
         manager.clear_memory(body.node_id)
@@ -437,7 +614,7 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
     def output_blocks(node_id: str):
         ex = manager.executor
         report = (ex.report if ex else None) or manager.report
-        out = report.outputs.get(node_id) if report else None
+        out = _resolve_output(report, node_id)
         if out is None:
             raise HTTPException(404, detail="esse agente ainda não produziu saída")
         node = next((n for n in manager.graph.nodes if n.id == node_id), None)

@@ -258,6 +258,190 @@ def test_persona_memory_persists_under_shared_key(settings):
     assert len(memory["g1"]) == 2
 
 
+def test_stop_node_ends_only_its_branch(settings):
+    # a → stop → b   e   a → c : b é pulado, c roda normal
+    g = Graph(
+        nodes=[make_node("a"), make_node("s", type="stop"), make_node("b"), make_node("c")],
+        edges=[
+            Edge(id="e1", source="a", target="s"),
+            Edge(id="e2", source="s", target="b"),
+            Edge(id="e3", source="a", target="c"),
+        ],
+    )
+    events, emit = collect_events()
+    report = GraphExecutor(g, settings, emit=emit, text_fn=echo_text_fn).run("t")
+    assert report.completed
+    assert report.outputs["s"].skipped
+    assert report.outputs["b"].skipped
+    assert "parada" in report.outputs["b"].error
+    assert not report.outputs["c"].skipped
+
+
+def test_timer_passes_messages_through(settings):
+    g = Graph(
+        nodes=[make_node("a"), make_node("t", type="timer", wait_s=0.01), make_node("b")],
+        edges=[
+            Edge(id="e1", source="a", target="t"),
+            Edge(id="e2", source="t", target="b"),
+        ],
+    )
+    captured = {}
+
+    def spy(node, user_msg, s, history=None):
+        captured[node.id] = user_msg
+        return echo_text_fn(node, user_msg, s)
+
+    report = GraphExecutor(g, settings, text_fn=spy).run("t")
+    assert report.completed
+    assert report.outputs["t"].text == "eco de Agente a"  # repassa a mensagem
+    assert "eco de Agente a" in captured["b"]
+    assert report.outputs["t"].cost_usd == 0
+
+
+def test_timer_wakes_on_abort(settings):
+    g = Graph(nodes=[make_node("t", type="timer", wait_s=60)])
+    ex = GraphExecutor(g, settings, text_fn=echo_text_fn)
+    import threading as _t
+    _t.Timer(0.05, ex.request_abort).start()
+    report = ex.run("t")  # não pode levar 60s
+    assert report.aborted
+
+
+def test_human_node_uses_input_fn(settings):
+    asked = {}
+
+    def fake_input(node, question, context):
+        asked["question"] = question
+        asked["context"] = context
+        return "minha resposta humana"
+
+    g = Graph(
+        nodes=[make_node("h", type="human", extra_prompt="Aprova o rumo?"),
+               make_node("b")],
+        edges=[Edge(id="e1", source="h", target="b")],
+    )
+    captured = {}
+
+    def spy(node, user_msg, s, history=None):
+        captured[node.id] = user_msg
+        return echo_text_fn(node, user_msg, s)
+
+    report = GraphExecutor(g, settings, text_fn=spy, input_fn=fake_input).run("tarefa Z")
+    assert asked["question"] == "Aprova o rumo?"
+    assert "tarefa Z" in asked["context"]
+    assert report.outputs["h"].text == "minha resposta humana"
+    assert "minha resposta humana" in captured["b"]
+
+
+def test_human_none_response_means_aborted(settings):
+    g = Graph(nodes=[make_node("h", type="human")])
+    report = GraphExecutor(g, settings, text_fn=echo_text_fn,
+                           input_fn=lambda n, q, c: None).run("t")
+    assert report.outputs["h"].skipped
+
+
+def test_cond_routes_and_skips_other_branch(settings):
+    # cond escolhe "aprovado" → b roda, c (reprovado) é pulado
+    def router_fn(node, user_msg, s, history=None):
+        if node.type == "cond":
+            assert "Rotas possíveis" in (node.prompt_override or "")
+            return NodeOutput(node_id=node.id, text="aprovado\nporque está bom")
+        return echo_text_fn(node, user_msg, s)
+
+    g = Graph(
+        nodes=[make_node("q", type="cond", extra_prompt="está bom?"),
+               make_node("b"), make_node("c")],
+        edges=[
+            Edge(id="e1", source="q", target="b", label="aprovado"),
+            Edge(id="e2", source="q", target="c", label="reprovado"),
+        ],
+    )
+    events, emit = collect_events()
+    report = GraphExecutor(g, settings, emit=emit, text_fn=router_fn).run("t")
+    assert not report.outputs["b"].skipped
+    assert report.outputs["c"].skipped
+    assert "outra rota" in report.outputs["c"].error
+    out_ev = next(e for e in events if e["kind"] == "node_output" and e["node_id"] == "q")
+    assert out_ev["chosen"] == "aprovado"
+
+
+def test_cond_route_defaults_to_target_name(settings):
+    def router_fn(node, user_msg, s, history=None):
+        if node.type == "cond":
+            return NodeOutput(node_id=node.id, text="Agente c")
+        return echo_text_fn(node, user_msg, s)
+
+    g = Graph(
+        nodes=[make_node("q", type="cond"), make_node("b"), make_node("c")],
+        edges=[Edge(id="e1", source="q", target="b"),
+               Edge(id="e2", source="q", target="c")],
+    )
+    report = GraphExecutor(g, settings, text_fn=router_fn).run("t")
+    assert report.outputs["b"].skipped
+    assert not report.outputs["c"].skipped
+
+
+def test_parse_route_fuzzy():
+    from zflow.executor import _parse_route
+    labels = ["aprovado", "reprovado"]
+    assert _parse_route("aprovado", labels) == "aprovado"
+    assert _parse_route("Reprovado.", labels) == "reprovado"
+    assert _parse_route("Escolho a rota: reprovado, pois há bugs.", labels) == "reprovado"
+    assert _parse_route("não sei", labels) == "aprovado"  # dúvida = primeira
+
+
+def test_feedback_is_injected_for_selected_persona(settings):
+    captured = {}
+
+    def spy(node, user_msg, s, history=None):
+        captured[node.id] = user_msg
+        return echo_text_fn(node, user_msg, s)
+
+    fb = {"a": ["não invente bibliotecas"]}
+    g = Graph(nodes=[make_node("a"), make_node("b")])
+    GraphExecutor(g, settings, text_fn=spy,
+                  feedback_fn=lambda k: fb.get(k, [])).run("t")
+    assert "Feedback do supervisor humano" in captured["a"]
+    assert "não invente bibliotecas" in captured["a"]
+    assert "Feedback" not in captured["b"]
+
+
+def test_auto_save_code_global_setting(settings, project_dir):
+    def coder_like(node, user_msg, s, history=None):
+        return NodeOutput(node_id=node.id,
+                          text="```python auto.py\nprint('x')\n```")
+
+    settings.auto_save_code = True
+    g = Graph(nodes=[make_node("a", save_files=False)])  # sem o checkbox por agente
+    report = GraphExecutor(g, settings, text_fn=coder_like).run("t")
+    assert report.outputs["a"].files_saved == ["auto.py"]
+    assert (project_dir / "auto.py").is_file()
+
+
+def test_loop_rounds_share_persona_history(settings):
+    """Loop expandido: a rodada 2 do Gerador recebe o histórico da rodada 1."""
+    from zflow.looping import expand_loops
+
+    seen = {}
+
+    def spy(node, user_msg, s, history=None):
+        seen[node.id] = history
+        return NodeOutput(node_id=node.id, text=f"v-{node.id}")
+
+    g = Graph(
+        nodes=[make_node("g", name="Gerador"), make_node("c", name="Crítico")],
+        edges=[
+            Edge(id="e1", source="g", target="c"),
+            Edge(id="e2", source="c", target="g", kind="loop", rounds=2),
+        ],
+    )
+    report = GraphExecutor(expand_loops(g), settings, text_fn=spy).run("t")
+    assert report.completed
+    assert seen["g"] is None
+    assert seen["g~2"][-1]["assistant"] == "v-g"  # lembra a rodada 1
+    assert seen["c~2"][-1]["assistant"] == "v-c"
+
+
 def test_save_files_auto_saves_named_blocks(settings, project_dir):
     def coder_like_text(node, user_msg, s, history=None):
         return NodeOutput(node_id=node.id,

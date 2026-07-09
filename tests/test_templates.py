@@ -10,6 +10,7 @@ from zflow.traits import TRAITS
 ALL_TEMPLATE_IDS = [
     "painel_critico", "hierarquia", "evolutivo", "dupla_codadora",
     "revisao_codigo", "fabrica_scripts", "esquadrao_debug", "gerar_revisar_refazer",
+    "refinamento_em_loop",
 ]
 
 
@@ -29,8 +30,16 @@ def test_gallery_lists_all_templates():
 
 @pytest.mark.parametrize("tid", ALL_TEMPLATE_IDS)
 def test_every_template_is_valid_and_runnable(tid):
+    from zflow.looping import expand_loops
+
     graph = load_template(tid)
-    validate_runnable(graph)  # não levanta: sem ciclo, não-vazio
+    validate_runnable(expand_loops(graph))  # não levanta: expande e é um DAG
+
+
+def test_refinamento_em_loop_has_loop_edge():
+    graph = load_template("refinamento_em_loop")
+    loop = next(e for e in graph.edges if e.kind == "loop")
+    assert loop.rounds == 3
 
 
 def test_fabrica_scripts_generator_saves_files():

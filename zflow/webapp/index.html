@@ -130,6 +130,10 @@
   #wires path.hit{ fill:none; stroke:transparent; stroke-width:14; pointer-events:stroke; cursor:pointer; }
   #wires g.sel path.wire{ stroke:var(--accent); stroke-width:2.5; }
   #wires path.temp{ fill:none; stroke:var(--accent); stroke-width:2; stroke-dasharray:6 5; pointer-events:none; }
+  #wires path.wire.loopwire{ stroke:var(--warn); stroke-dasharray:7 5; }
+  #wires text.elab{ font:600 10.5px var(--sans); fill:var(--dim); pointer-events:none;
+                    paint-order:stroke; stroke:var(--bg); stroke-width:4px; stroke-linejoin:round; }
+  #wires g.sel text.elab{ fill:var(--accent-2); }
 
   .node{ position:absolute; width:var(--node-w); background:var(--panel); border:1.5px solid var(--line);
          border-radius:12px; box-shadow:var(--shadow-sm); user-select:none; cursor:grab;
@@ -145,7 +149,15 @@
   .node-model{ font:10.5px var(--mono); color:var(--accent-2); background:var(--accent-ghost);
                border:1px solid var(--accent-line); border-radius:6px; padding:2px 7px;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; align-self:flex-start; }
+  .node-model:empty{ display:none; }
   .node.coder .node-model{ color:var(--warn); background:var(--warn-ghost); border-color:var(--warn-line); }
+  .node.human{ border-style:dashed; }
+  .node.stop .node-name{ color:var(--err); }
+  .node-act{ display:none; background:var(--panel2); border:1px solid var(--line); color:var(--text);
+             border-radius:7px; width:22px; height:22px; padding:0; font-size:11px; flex:none;
+             align-items:center; justify-content:center; cursor:pointer; }
+  .node-act:hover{ border-color:var(--accent-line); background:var(--panel3); box-shadow:none; filter:none; }
+  .node.done .node-act, .node.error .node-act{ display:inline-flex; }
   .node-traits{ font:10.5px var(--sans); color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .node-stats{ font:600 10.5px var(--mono); color:var(--ok-2); display:none; }
   .node-stats:not(:empty){ display:block; }
@@ -240,6 +252,46 @@
                 animation:toastIn .3s cubic-bezier(.2,.9,.3,1.2); }
   #approvalBar .msg{ font:13px/1.5 var(--sans); color:var(--text); flex:1; min-width:200px; }
   #approvalBar .msg::before{ content:"⚠️ "; }
+
+  /* ---------------- cartões "responda você" (nó 👤) ---------------- */
+  #inputBars{ position:absolute; top:14px; left:50%; transform:translateX(-50%); z-index:21;
+              display:flex; flex-direction:column; gap:10px; width:min(600px, 84%); }
+  .inputCard{ background:var(--panel); border:1.5px solid var(--accent-line); border-radius:13px;
+              padding:12px 16px; box-shadow:var(--shadow-lg); display:flex; flex-direction:column; gap:8px;
+              animation:toastIn .3s cubic-bezier(.2,.9,.3,1.2); }
+  .inputCard .q{ font:13px/1.5 var(--sans); color:var(--text); }
+  .inputCard textarea{ min-height:56px; font-family:var(--sans); }
+  .inputCard details pre{ max-height:180px; overflow:auto; background:var(--panel2);
+                          border:1px solid var(--line-soft); border-radius:8px; padding:8px 10px;
+                          font:11px/1.6 var(--mono); white-space:pre-wrap; color:var(--dim); margin:6px 0 0; }
+  .inputCard .row{ display:flex; gap:8px; justify-content:flex-end; align-items:center; }
+
+  /* ---------------- setup (⚙️) e feedback (💬) ---------------- */
+  #setWrap, #fbWrap{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:85;
+                     display:flex; align-items:center; justify-content:center; }
+  #setModal, #fbModal{ width:min(640px, 92vw); max-height:84vh; overflow-y:auto; background:var(--panel);
+                       border:1px solid var(--line); border-radius:16px; padding:22px; box-shadow:var(--shadow-lg);
+                       animation:toastIn .25s cubic-bezier(.2,.9,.3,1.1); }
+  #setModal h2, #fbModal h2{ margin:0 0 4px; font:700 17px var(--sans); color:var(--text-strong);
+                             display:flex; align-items:center; gap:8px; }
+  #setModal h2 .grow, #fbModal h2 .grow{ flex:1; }
+  .setsec{ font:600 11px var(--sans); text-transform:uppercase; letter-spacing:.12em; color:var(--dim);
+           margin:18px 0 8px; border-bottom:1px solid var(--line-soft); padding-bottom:5px; }
+  .setrow{ display:flex; gap:8px; align-items:center; margin:7px 0; }
+  .setrow code{ font:600 11.5px var(--mono); color:var(--text); min-width:170px; }
+  .setrow input[type="password"], .setrow input[type="text"]{ flex:1; }
+  .setrow input[type="number"]{ width:90px; }
+  .setrow .st{ font:11px var(--sans); color:var(--dim); white-space:nowrap; }
+  .keydot{ width:9px; height:9px; border-radius:50%; background:var(--dim2); flex:none; }
+  .keydot.ok{ background:var(--ok); box-shadow:0 0 6px var(--ok); }
+  .fbagent{ display:flex; gap:8px; align-items:center; font:12.5px var(--sans); padding:5px 2px; cursor:pointer; }
+  .fbagent input{ width:auto; accent-color:var(--accent); }
+  .fbitem{ display:flex; gap:8px; align-items:flex-start; background:var(--panel2); border:1px solid var(--line-soft);
+           border-radius:9px; padding:8px 11px; margin:6px 0; font:12px/1.5 var(--sans); }
+  .fbitem b{ color:var(--accent-2); flex:none; }
+  .fbitem span{ flex:1; }
+  .fbitem .delx{ color:var(--dim2); cursor:pointer; font-weight:700; }
+  .fbitem .delx:hover{ color:var(--err); }
 
   /* ---------------- drawer de saída ---------------- */
   #drawerWrap{ position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:90;
@@ -342,14 +394,17 @@
   <span id="phaseBadge" class="badge">pronto</span>
   <span id="cost" class="hidden"></span>
   <span id="savings" class="savings hidden"></span>
+  <button id="setupBtn" class="icon-btn" title="setup: chaves de API e opções">⚙️</button>
   <button id="themeBtn" class="icon-btn" title="alternar tema">◐</button>
 </header>
 
 <div id="toolbar">
   <span class="menuwrap"><button id="addTextBtn" class="secondary" title="agente que pensa e escreve (não mexe em arquivos)">🧠 Agente de texto ▾</button></span>
   <span class="menuwrap"><button id="addCoderBtn" class="secondary" title="agente que edita arquivos do projeto via Aider">🛠️ Agente codador ▾</button></span>
+  <span class="menuwrap"><button id="addSpecialBtn" class="secondary" title="caixas especiais: você no fluxo, espera, condição, parada">✚ Especiais ▾</button></span>
   <button id="tplBtn" class="secondary" title="arquiteturas prontas para arrastar e ajustar">📚 Templates</button>
   <button id="filesBtn" class="secondary" title="arquivos do projeto: ver, rodar, abrir a pasta">📁 Arquivos</button>
+  <button id="fbBtn" class="secondary" title="dê orientações para personagens específicos — valem para as próximas vezes que eles falarem">💬 Feedback</button>
   <button id="exportBtn" class="icon-btn" title="baixar o fluxo como JSON">⤓</button>
   <button id="importBtn" class="icon-btn" title="importar um fluxo de um arquivo JSON">⤒</button>
   <input type="file" id="importFile" accept=".json,application/json" class="hidden">
@@ -384,6 +439,7 @@
       <button id="apSkip" class="secondary">⏭ Pular</button>
       <button id="apAbort" class="danger">■ Abortar</button>
     </div>
+    <div id="inputBars"></div>
   </div>
   <aside id="inspector">
     <h2>Propriedades</h2>
@@ -408,6 +464,22 @@
     <div id="drawerMeta"></div>
     <div id="drawerBody"></div>
     <div id="drawerBlocks" class="hidden"></div>
+  </div>
+</div>
+
+<div id="setWrap" class="hidden">
+  <div id="setModal">
+    <h2>⚙️ Setup <span class="grow"></span><button class="icon-btn" id="setClose" title="fechar">✕</button></h2>
+    <p class="sub muted">Chaves de API e opções gerais. As chaves ficam em <code>~/.zflow/keys.json</code>, fora de qualquer repositório.</p>
+    <div id="setBody"></div>
+  </div>
+</div>
+
+<div id="fbWrap" class="hidden">
+  <div id="fbModal">
+    <h2>💬 Feedback para os agentes <span class="grow"></span><button class="icon-btn" id="fbClose" title="fechar">✕</button></h2>
+    <p class="sub muted">Escreva uma orientação e escolha quem deve recebê-la. Ela é injetada em TODAS as próximas falas desses personagens (nesta e nas próximas execuções), até você apagar.</p>
+    <div id="fbBody"></div>
   </div>
 </div>
 
@@ -468,9 +540,9 @@ function clientToWorld(cx, cy) {
   return { x: (cx - r.left - view.panX) / view.zoom, y: (cy - r.top - view.panY) / view.zoom };
 }
 function makesCycle(src, dst) {
-  // já existe caminho dst -> src? então src->dst fecha ciclo
+  // já existe caminho dst -> src pelas setas NORMAIS? então src->dst fecha ciclo
   const adj = {};
-  for (const e of graph.edges) (adj[e.source] = adj[e.source] || []).push(e.target);
+  for (const e of graph.edges) if (e.kind !== "loop") (adj[e.source] = adj[e.source] || []).push(e.target);
   const seen = new Set(); const stack = [dst];
   while (stack.length) {
     const cur = stack.pop();
@@ -544,8 +616,20 @@ function fitView() {
 }
 
 /* ================= render de nós ================= */
-const NODE_ICO = { text: "🧠", coder: "🛠️" };
+const NODE_ICO = { text: "🧠", coder: "🛠️", human: "👤", timer: "⏱", cond: "🔀", stop: "🛑" };
+const TYPE_DESC = {
+  text: "Agente de texto — pensa e escreve",
+  coder: "Agente codador — edita arquivos via Aider",
+  human: "Humano no fluxo — a execução pausa e espera VOCÊ responder",
+  timer: "Espera — segura o fluxo por alguns segundos e repassa as mensagens",
+  cond: "Condição (if) — escolhe UMA das setas de saída segundo o critério",
+  stop: "Parada — encerra este ramo; os outros ramos continuam",
+};
 function traitsSummary(n) {
+  if (n.type === "human") return "responde você mesmo, durante a execução";
+  if (n.type === "timer") return `espera ${n.wait_s ?? 10}s e repassa as mensagens`;
+  if (n.type === "stop") return "encerra este ramo do fluxo";
+  if (n.type === "cond") return "roteia para uma das setas de saída";
   const lbl = {}; for (const t of traitsCatalog) lbl[t.key] = t.label;
   const parts = n.traits.length ? n.traits.map(k => lbl[k] || k) : ["sem personalidade definida"];
   if (n.persona) parts.push("👥 mesmo personagem");
@@ -561,7 +645,7 @@ function renderNode(n) {
     el.className = "node";
     el.dataset.id = n.id;
     el.innerHTML = `
-      <div class="node-head"><span class="node-ico"></span><span class="node-name"></span></div>
+      <div class="node-head"><span class="node-ico"></span><span class="node-name"></span><button class="node-act" title="ver a resposta deste agente">📄</button></div>
       <div class="node-body"><span class="node-model"></span><span class="node-traits"></span><span class="node-stats"></span></div>
       <div class="port port-in" title="entrada"></div>
       <div class="port port-out" title="saída — arraste até outro nó"></div>`;
@@ -569,13 +653,14 @@ function renderNode(n) {
     nodeEls.set(n.id, el);
     wireNodeEvents(el);
   }
-  el.classList.toggle("coder", n.type === "coder");
+  for (const t of ["coder", "human", "timer", "cond", "stop"]) el.classList.toggle(t, n.type === t);
   el.classList.toggle("sel", !!(sel && sel.type === "node" && sel.id === n.id));
   el.style.left = n.x + "px";
   el.style.top = n.y + "px";
   el.querySelector(".node-ico").textContent = NODE_ICO[n.type] || "🧠";
   el.querySelector(".node-name").textContent = n.name;
-  el.querySelector(".node-model").textContent = (n.model || "").split("/").pop();
+  const showModel = !["human", "timer", "stop"].includes(n.type);
+  el.querySelector(".node-model").textContent = showModel ? (n.model || "").split("/").pop() : "";
   el.querySelector(".node-traits").textContent = traitsSummary(n);
   el.querySelector(".node-stats").textContent = nodeStats[n.id] || "";
 }
@@ -616,15 +701,28 @@ function renderEdge(e) {
     const hit = document.createElementNS(NS, "path");
     hit.setAttribute("class", "hit");
     hit.addEventListener("pointerdown", (ev) => { ev.stopPropagation(); select({ type: "edge", id: e.id }); });
-    g.appendChild(hit); g.appendChild(wire);
+    const txt = document.createElementNS(NS, "text");
+    txt.setAttribute("class", "elab");
+    txt.setAttribute("text-anchor", "middle");
+    g.appendChild(hit); g.appendChild(wire); g.appendChild(txt);
     wires.appendChild(g);
-    rec = { g, wire, hit };
+    rec = { g, wire, hit, txt };
     edgeEls.set(e.id, rec);
   }
   const a = anchors(e);
   const d = bezier(a.x1, a.y1, a.x2, a.y2);
   rec.wire.setAttribute("d", d);
   rec.hit.setAttribute("d", d);
+  rec.wire.classList.toggle("loopwire", e.kind === "loop");
+  const label = (e.kind === "loop" ? `🔁 ×${e.rounds || 2}` : "") +
+                (e.label ? (e.kind === "loop" ? " " : "") + e.label : "");
+  if (rec.txt.textContent !== label) rec.txt.textContent = label;
+  if (label) {
+    try {
+      const mid = rec.wire.getPointAtLength(rec.wire.getTotalLength() / 2);
+      rec.txt.setAttribute("x", mid.x); rec.txt.setAttribute("y", mid.y - 6);
+    } catch (err) { /* path fora do DOM */ }
+  }
   rec.g.classList.toggle("sel", !!(sel && sel.type === "edge" && sel.id === e.id));
 }
 function renderEdges() {
@@ -642,6 +740,8 @@ function renderAll() { renderNodes(); renderEdges(); }
 /* ================= interação: drag de nó + criar seta ================= */
 function wireNodeEvents(el) {
   el.addEventListener("pointerdown", (ev) => {
+    // 📄 abre a resposta — funciona inclusive DURANTE a execução
+    if (ev.target.closest(".node-act")) { ev.stopPropagation(); openDrawer(el.dataset.id); return; }
     if (running) return;
     const id = el.dataset.id;
     if (ev.target.classList.contains("port-out")) { startConnect(ev, id); return; }
@@ -679,14 +779,16 @@ function startConnect(ev, srcId) {
   wires.appendChild(tempPath);
   const srcEl = nodeEls.get(srcId), srcN = nodeById(srcId);
   const x1 = srcN.x + srcEl.offsetWidth, y1 = srcN.y + srcEl.offsetHeight / 2;
-  let hoverEl = null;
+  let hoverEl = null, moved = false;
+  const p0 = { x: ev.clientX, y: ev.clientY };
   const onMove = (e2) => {
+    if (Math.abs(e2.clientX - p0.x) + Math.abs(e2.clientY - p0.y) > 24) moved = true;
     const w = clientToWorld(e2.clientX, e2.clientY);
     tempPath.setAttribute("d", bezier(x1, y1, w.x, w.y));
     const under = document.elementFromPoint(e2.clientX, e2.clientY);
     const nd = under && under.closest ? under.closest(".node") : null;
     if (hoverEl && hoverEl !== nd) hoverEl.classList.remove("conn-target");
-    hoverEl = (nd && nd.dataset.id !== srcId) ? nd : null;
+    hoverEl = nd || null;  // soltar no PRÓPRIO nó cria uma repetição 🔁 dele
     if (hoverEl) hoverEl.classList.add("conn-target");
   };
   const onUp = (e2) => {
@@ -696,7 +798,8 @@ function startConnect(ev, srcId) {
     tempPath.remove(); tempPath = null;
     if (hoverEl) {
       hoverEl.classList.remove("conn-target");
-      addEdge(srcId, hoverEl.dataset.id);
+      // soltar sem arrastar em cima do próprio nó = clique acidental, ignora
+      if (hoverEl.dataset.id !== srcId || moved) addEdge(srcId, hoverEl.dataset.id);
     }
   };
   const onKey = (e2) => { if (e2.key === "Escape") { onUp(e2); } };
@@ -706,13 +809,16 @@ function startConnect(ev, srcId) {
 }
 
 function addEdge(src, dst) {
-  if (src === dst) return;
   if (graph.edges.some(e => e.source === src && e.target === dst)) { toast("essa seta já existe", "warn"); return; }
-  if (makesCycle(src, dst)) {
-    toast("essa seta fecharia um ciclo — ciclos ainda não são suportados", "warn");
-    return;
+  let kind = "normal", rounds = 2;
+  if (src === dst || makesCycle(src, dst)) {
+    // volta para trás no fluxo → vira seta de repetição 🔁 (loop com contagem)
+    if (!confirm("Essa seta volta para um ponto anterior do fluxo.\n\nCriar como 🔁 REPETIÇÃO? O trecho entre os dois nós rodará várias vezes — e os personagens lembram as rodadas anteriores.")) return;
+    const r = parseInt(prompt("Quantas rodadas no total? (2 a 30)", "3"), 10);
+    if (!r) return;
+    kind = "loop"; rounds = Math.max(2, Math.min(30, r));
   }
-  const e = { id: freshId("e", graph.edges), source: src, target: dst, label: "", kind: "normal" };
+  const e = { id: freshId("e", graph.edges), source: src, target: dst, label: "", kind, rounds };
   graph.edges.push(e);
   renderEdges();
   select({ type: "edge", id: e.id });
@@ -743,6 +849,15 @@ canvas.addEventListener("pointerdown", (ev) => {
 /* ================= adicionar / remover nós ================= */
 let presetsCatalog = { text: [], coder: [] };
 
+const TYPE_NAMES = { text: "Agente", coder: "Codador", human: "Você (humano)",
+                     timer: "Espera", cond: "Condição", stop: "Parada" };
+const SPECIALS = [
+  { type: "human", label: "👤 Humano no fluxo", desc: "a execução pausa e espera VOCÊ responder — tire dúvidas, resolva ambiguidades, aprove rumos" },
+  { type: "timer", label: "⏱ Espera (timer)", desc: "segura o fluxo por N segundos e repassa as mensagens — tempo para você conferir algo" },
+  { type: "cond", label: "🔀 Condição (if)", desc: "um roteador escolhe UMA das setas de saída segundo o seu critério; os outros ramos são pulados" },
+  { type: "stop", label: "🛑 Parada de ramo", desc: "encerra este ramo (quem depende só dele é pulado); os outros ramos continuam" },
+];
+
 function addNode(type, preset) {
   const r = canvas.getBoundingClientRect();
   const c = clientToWorld(r.left + r.width * 0.42 + Math.random() * 60, r.top + r.height * 0.4 + Math.random() * 60);
@@ -750,14 +865,15 @@ function addNode(type, preset) {
   const n = {
     id: freshId("n", graph.nodes),
     type,
-    name: p.name || (type === "coder" ? "Codador" : "Agente"),
+    name: p.name || TYPE_NAMES[type] || "Agente",
     model: "deepseek/deepseek-v4-flash",
     traits: [...(p.traits || [])],
     extra_prompt: p.extra_prompt || "",
     prompt_override: "",
-    include_task: true,
+    include_task: type !== "timer" && type !== "stop",
     memory: false,
     save_files: !!p.save_files,
+    wait_s: 10,
     x: Math.round(c.x), y: Math.round(c.y), files: [],
   };
   graph.nodes.push(n);
@@ -779,6 +895,7 @@ function duplicateNode(src) {
     persona: src.persona || src.id,  // instância do MESMO personagem
     memory: src.memory,
     save_files: !!src.save_files,
+    wait_s: src.wait_s ?? 10,
     x: Math.round(src.x + 60), y: Math.round(src.y + 90),
     files: [...(src.files || [])],
   };
@@ -811,6 +928,21 @@ function showPresetMenu(btn, type) {
 }
 $("addTextBtn").onclick = (ev) => { ev.stopPropagation(); showPresetMenu(ev.currentTarget, "text"); };
 $("addCoderBtn").onclick = (ev) => { ev.stopPropagation(); showPresetMenu(ev.currentTarget, "coder"); };
+$("addSpecialBtn").onclick = (ev) => {
+  ev.stopPropagation();
+  const btn = ev.currentTarget;
+  const already = btn.parentElement.querySelector(".menu");
+  closeMenus();
+  if (already) return;
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.innerHTML = SPECIALS.map(s => `
+    <div class="menuitem" data-t="${s.type}"><b>${esc(s.label)}</b><span>${esc(s.desc)}</span></div>`).join("");
+  menu.querySelectorAll(".menuitem").forEach(item => {
+    item.onclick = (e2) => { e2.stopPropagation(); addNode(item.dataset.t); closeMenus(); };
+  });
+  btn.parentElement.appendChild(menu);
+};
 document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest(".menu, .menuwrap")) closeMenus(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenus(); });
 
@@ -922,63 +1054,107 @@ function renderInspector() {
     const e = edgeById(sel.id);
     if (!e) { select(null); return; }
     const from = nodeById(e.source), to = nodeById(e.target);
+    const isLoop = e.kind === "loop";
+    const condSrc = from.type === "cond";
     box.innerHTML = `
-      <div class="muted">Seta: <b>${esc(from.name)}</b> → <b>${esc(to.name)}</b></div>
-      <label>Rótulo (só visual)</label>
-      <input id="i_label" value="${esc(e.label)}" placeholder="ex.: parecer">
+      <div class="muted">${isLoop ? "Seta de repetição 🔁" : "Seta"}: <b>${esc(from.name)}</b> → <b>${esc(to.name)}</b></div>
+      ${isLoop ? `
+      <label>Rodadas (total de vezes que o trecho roda)</label>
+      <input id="i_rounds" type="number" min="2" max="30" value="${e.rounds || 2}">
+      <div class="muted" style="margin-top:6px">o trecho entre <b>${esc(to.name)}</b> e <b>${esc(from.name)}</b> repete; os personagens lembram as rodadas anteriores</div>` : ""}
+      <label>Rótulo${condSrc ? " — é o NOME desta rota na condição" : " (só visual)"}</label>
+      <input id="i_label" value="${esc(e.label)}" placeholder="${condSrc ? "ex.: aprovado" : "ex.: parecer"}">
+      ${condSrc ? `<div class="muted" style="margin-top:6px">🔀 a condição escolhe uma rota pelo rótulo (vazio = nome do destino)</div>` : ""}
       <label></label>
       <button class="danger" id="i_delEdge">🗑 Apagar seta</button>`;
-    $("i_label").oninput = (ev) => { e.label = ev.target.value; scheduleSave(); };
+    $("i_label").oninput = (ev) => { e.label = ev.target.value; renderEdge(e); scheduleSave(); };
+    const roundsEl = $("i_rounds");
+    if (roundsEl) roundsEl.oninput = (ev) => {
+      e.rounds = Math.max(2, Math.min(30, parseInt(ev.target.value, 10) || 2));
+      renderEdge(e); scheduleSave();
+    };
     $("i_delEdge").onclick = deleteSelection;
     return;
   }
   const n = nodeById(sel.id);
   if (!n) { select(null); return; }
+  const isAgent = n.type === "text" || n.type === "coder";
   const modelOpts = modelsCatalog.map(m => `<option value="${esc(m)}"></option>`).join("");
   const chips = traitsCatalog.map(t =>
     `<span class="chip${n.traits.includes(t.key) ? " on" : ""}${t.custom ? " custom" : ""}" data-k="${esc(t.key)}" title="${esc(t.prompt)}">${esc(t.label)}${t.custom ? `<b class="delx" title="apagar esta personalidade do catálogo">×</b>` : ""}</span>`).join("")
     + `<span class="chip add" id="addTraitChip" title="cadastrar uma personalidade sua (fica disponível em todos os fluxos)">➕ nova</span>`;
   const pKey = n.persona || n.id;
   const instances = graph.nodes.filter(o => (o.persona || o.id) === pKey);
+  const fbList = (st && st.feedback && st.feedback[pKey]) || [];
+  const condRoutes = n.type === "cond"
+    ? graph.edges.filter(e => e.source === n.id).map(e => e.label.trim() || (nodeById(e.target) || {}).name || e.target)
+    : [];
   box.innerHTML = `
-    <div class="muted">${NODE_ICO[n.type]} ${n.type === "coder" ? "Agente codador — edita arquivos via Aider" : "Agente de texto — pensa e escreve"}</div>
-    ${instances.length > 1 ? `<div class="muted" style="margin-top:4px">👥 personagem com ${instances.length} instâncias no fluxo — elas compartilham o contexto na mesma execução (a 2ª lembra o que a 1ª disse)</div>` : ""}
-    <label>Nome do personagem</label>
+    <div class="muted">${NODE_ICO[n.type]} ${TYPE_DESC[n.type] || ""}</div>
+    ${instances.length > 1 && isAgent ? `<div class="muted" style="margin-top:4px">👥 personagem com ${instances.length} instâncias no fluxo — elas compartilham o contexto na mesma execução (a 2ª lembra o que a 1ª disse)</div>` : ""}
+    <label>Nome</label>
     <input id="i_name" value="${esc(n.name)}" spellcheck="false">
+    ${isAgent || n.type === "cond" ? `
     <label>Modelo (formato litellm: provedor/modelo)</label>
     <input id="i_model" value="${esc(n.model)}" list="dl_models" spellcheck="false">
-    <datalist id="dl_models">${modelOpts}</datalist>
+    <datalist id="dl_models">${modelOpts}</datalist>` : ""}
+    ${n.type === "timer" ? `
+    <label>Segundos de espera</label>
+    <input id="i_wait" type="number" min="1" max="3600" value="${n.wait_s ?? 10}">
+    <div class="muted" style="margin-top:6px">o fluxo pausa aqui por esse tempo e repassa as mensagens recebidas adiante — dá tempo de você conferir algo (abortar interrompe na hora)</div>` : ""}
+    ${n.type === "stop" ? `
+    <div class="muted" style="margin-top:10px">🛑 quando a execução chega aqui, ESTE ramo termina: quem depende só dele é pulado. Os outros ramos seguem normais. Útil como destino de uma 🔀 condição ("se reprovado → parada").</div>` : ""}
+    ${n.type === "human" ? `
+    <label>Pergunta / instrução para você</label>
+    <textarea id="i_extra" placeholder="ex.: Há alguma ambiguidade na tarefa? Responda às dúvidas dos agentes.">${esc(n.extra_prompt)}</textarea>
+    <div class="muted" style="margin-top:6px">na execução, aparece um cartão no topo do canvas com o contexto recebido — a SUA resposta vira a saída desta caixa e segue pelas setas</div>` : ""}
+    ${n.type === "cond" ? `
+    <label>Critério da decisão</label>
+    <textarea id="i_extra" placeholder="ex.: Se o código recebido tem bugs graves, escolha 'refazer'; senão, 'aprovar'.">${esc(n.extra_prompt)}</textarea>
+    <div class="muted" style="margin-top:6px">🔀 as setas de SAÍDA são as rotas${condRoutes.length ? ": <b>" + condRoutes.map(esc).join("</b> · <b>") + "</b>" : " — desenhe as setas e dê rótulos a elas"}. Só a rota escolhida continua; as outras são puladas.</div>` : ""}
+    ${isAgent ? `
     <label>Personalidade</label>
     <div id="chips">${chips}</div>
     <label>Instruções extras</label>
-    <textarea id="i_extra" placeholder="ex.: Produza um parecer único e final.">${esc(n.extra_prompt)}</textarea>
+    <textarea id="i_extra" placeholder="ex.: Produza um parecer único e final.">${esc(n.extra_prompt)}</textarea>` : ""}
     ${n.type === "coder" ? `
     <label>Arquivos-alvo (um por linha, opcional)</label>
     <textarea id="i_files" placeholder="ex.: app/main.py">${esc(n.files.join("\n"))}</textarea>` : ""}
-    <label class="check" style="margin-top:14px"><input type="checkbox" id="i_task" ${n.include_task ? "checked" : ""}> recebe a tarefa original</label>
+    ${n.type !== "stop" && n.type !== "timer" ? `
+    <label class="check" style="margin-top:14px"><input type="checkbox" id="i_task" ${n.include_task ? "checked" : ""}> recebe a tarefa original</label>` : ""}
     ${n.type === "text" ? `
     <label class="check" style="margin-top:8px" title="o personagem vê as conversas dele TAMBÉM nas próximas execuções (entre runs)"><input type="checkbox" id="i_memory" ${n.memory ? "checked" : ""}> 🧠 lembrar entre execuções</label>
     ${st && st.memory_counts && st.memory_counts[pKey] ? `<div class="row" style="margin-top:6px"><span class="muted">🧠 ${st.memory_counts[pKey]} conversa(s) lembrada(s)</span><button class="secondary" id="i_clearMem" style="padding:4px 10px;font-size:11px">limpar</button></div>` : ""}
     <label class="check" style="margin-top:8px" title="blocos de código com nome detectável na resposta viram arquivos reais no projeto"><input type="checkbox" id="i_save" ${n.save_files ? "checked" : ""}> 💾 salvar blocos de código como arquivos</label>` : ""}
+    ${fbList.length ? `<div class="muted" style="margin-top:8px">💬 ${fbList.length} feedback(s) seu(s) ativo(s) para este personagem — gerencie no botão 💬 Feedback</div>` : ""}
+    ${isAgent ? `
     <details style="margin-top:12px" ${n.prompt_override ? "open" : ""}><summary>prompt final ${n.prompt_override ? "— ✍️ manual" : "(automático)"}</summary>
       <textarea id="promptEdit" spellcheck="false" style="min-height:120px;font:11px/1.6 var(--mono);margin-top:6px"></textarea>
       <div class="row" style="margin-top:6px">
         <span class="muted" id="promptMode"></span>
         <button class="secondary" id="promptRestore" style="padding:4px 10px;font-size:11px">↺ voltar ao automático</button>
       </div>
-    </details>
+    </details>` : ""}
     <label></label>
     ${st && st.node_status[n.id] && st.node_status[n.id] !== "pending" ? `<button class="secondary" id="i_output" style="margin-bottom:8px">📄 Ver resposta</button>` : ""}
-    <button class="secondary" id="i_dup" style="margin-bottom:8px" title="cria outra instância DESTE personagem mais adiante na cadeia — ela lembra o que esta disse na mesma execução">⧉ Duplicar personagem</button>
-    <button class="danger" id="i_delNode">🗑 Apagar agente</button>`;
+    ${isAgent ? `<button class="secondary" id="i_dup" style="margin-bottom:8px" title="cria outra instância DESTE personagem mais adiante na cadeia — ela lembra o que esta disse na mesma execução">⧉ Duplicar personagem</button>` : ""}
+    <button class="danger" id="i_delNode">🗑 Apagar</button>`;
 
   const upd = () => { renderNode(n); renderEdgesOf(n.id); refreshPromptEditor(n); scheduleSave(); };
   $("i_name").oninput = (ev) => { n.name = ev.target.value || "Agente"; upd(); };
-  $("i_model").oninput = (ev) => { n.model = ev.target.value; upd(); };
-  $("i_extra").oninput = (ev) => { n.extra_prompt = ev.target.value; refreshPromptEditor(n); scheduleSave(); };
+  const modelEl = $("i_model");
+  if (modelEl) modelEl.oninput = (ev) => { n.model = ev.target.value; upd(); };
+  const extraEl = $("i_extra");
+  if (extraEl) extraEl.oninput = (ev) => { n.extra_prompt = ev.target.value; refreshPromptEditor(n); scheduleSave(); };
+  const waitEl = $("i_wait");
+  if (waitEl) waitEl.oninput = (ev) => {
+    n.wait_s = Math.max(1, Math.min(3600, parseFloat(ev.target.value) || 10));
+    upd();
+  };
   const filesEl = $("i_files");
   if (filesEl) filesEl.oninput = (ev) => { n.files = ev.target.value.split("\n").map(s => s.trim()).filter(Boolean); scheduleSave(); };
-  $("i_task").onchange = (ev) => { n.include_task = ev.target.checked; scheduleSave(); };
+  const taskEl = $("i_task");
+  if (taskEl) taskEl.onchange = (ev) => { n.include_task = ev.target.checked; scheduleSave(); };
   const memEl = $("i_memory");
   if (memEl) memEl.onchange = (ev) => { n.memory = ev.target.checked; upd(); };
   const saveEl = $("i_save");
@@ -990,7 +1166,8 @@ function renderInspector() {
   };
   const outBtn = $("i_output");
   if (outBtn) outBtn.onclick = () => openDrawer(n.id);
-  $("i_dup").onclick = () => duplicateNode(n);
+  const dupBtn = $("i_dup");
+  if (dupBtn) dupBtn.onclick = () => duplicateNode(n);
   $("i_delNode").onclick = deleteSelection;
   box.querySelectorAll(".chip[data-k]").forEach(ch => {
     ch.onclick = async (ev) => {
@@ -1012,7 +1189,8 @@ function renderInspector() {
       upd();
     };
   });
-  $("addTraitChip").onclick = () => {
+  const addChip = $("addTraitChip");
+  if (addChip) addChip.onclick = () => {
     if ($("traitForm")) return;
     const form = document.createElement("div");
     form.id = "traitForm";
@@ -1037,22 +1215,24 @@ function renderInspector() {
     };
   };
   const pe = $("promptEdit");
-  pe.oninput = () => {
-    // editar aqui vira um override manual — traits/extras ficam guardados;
-    // "voltar ao automático" descarta o manual e remonta dos chips
-    n.prompt_override = pe.value;
-    refreshPromptEditor(n, true);
-    renderNode(n);
-    scheduleSave();
-  };
-  $("promptRestore").onclick = () => {
-    n.prompt_override = "";
+  if (pe) {
+    pe.oninput = () => {
+      // editar aqui vira um override manual — traits/extras ficam guardados;
+      // "voltar ao automático" descarta o manual e remonta dos chips
+      n.prompt_override = pe.value;
+      refreshPromptEditor(n, true);
+      renderNode(n);
+      scheduleSave();
+    };
+    $("promptRestore").onclick = () => {
+      n.prompt_override = "";
+      refreshPromptEditor(n);
+      renderNode(n);
+      scheduleSave();
+      toast("prompt voltou ao automático", "ok");
+    };
     refreshPromptEditor(n);
-    renderNode(n);
-    scheduleSave();
-    toast("prompt voltou ao automático", "ok");
-  };
-  refreshPromptEditor(n);
+  }
 }
 
 function assembledPrompt(n) {
@@ -1115,15 +1295,23 @@ $("apAbort").onclick = () => post("/api/approve", { decision: "abort" });
 
 /* ---- feed amigável ---- */
 function clearFeed() { $("feedWrap").innerHTML = ""; }
+/* itens do feed são BEM temporários (somem sozinhos) — os que estão "pendentes"
+   (pensando…/esperando você) ficam até resolver; o resultado completo continua
+   sempre acessível no 📄 de cada caixinha */
 function pushFeed(icon, text, cls, nodeId, pendingFor) {
   const it = document.createElement("div");
   it.className = "feeditem" + (cls ? " " + cls : "") + (nodeId ? " click" : "");
   it.innerHTML = `<span class="fi">${icon}</span><span class="fx">${esc(text)}</span>`;
   if (nodeId) it.onclick = () => openDrawer(nodeId);
   if (pendingFor) it.dataset.pending = pendingFor;
+  else {
+    const ttl = cls === "err" ? 9000 : 5000;
+    setTimeout(() => { it.style.transition = "opacity .5s"; it.style.opacity = "0";
+                       setTimeout(() => it.remove(), 500); }, ttl);
+  }
   const wrap = $("feedWrap");
   wrap.prepend(it);
-  while (wrap.children.length > 40) wrap.lastChild.remove();
+  while (wrap.children.length > 8) wrap.lastChild.remove();
 }
 /* o "X começou a pensar…" sai do feed quando X conclui — senão fica pulsando
    pra sempre e parece que a execução travou */
@@ -1138,8 +1326,12 @@ function setNodeStats(id, text) {
   if (el) el.querySelector(".node-stats").textContent = text;
 }
 
+/* "n3~2" (rodada 2 de um loop) → caixinha n3 do canvas */
+function baseOf(id) { return String(id || "").split("~")[0]; }
+
 function handleEvent(ev) {
   const k = ev.kind;
+  const bid = baseOf(ev.node_id);
   if (k === "run_start") {
     clearFeed();
     nodeStats = {};
@@ -1147,35 +1339,43 @@ function handleEvent(ev) {
     pushFeed("🚀", "execução começou", "run", null, "__run__");
   }
   else if (k === "node_start") {
-    const n = nodeById(ev.node_id);
-    pushFeed(n && n.type === "coder" ? "🛠️" : "🧠", `${ev.name} começou a pensar…`, "run", null, ev.node_id);
-    for (const e of graph.edges) if (e.target === ev.node_id) {
+    const n = nodeById(bid);
+    const t = n ? n.type : "text";
+    if (t === "human") pushFeed("👤", `${ev.name} — esperando a SUA resposta (cartão no topo)…`, "warn", null, ev.node_id);
+    else if (t === "timer") pushFeed("⏱", `${ev.name} — esperando ${ev.wait_s ?? "alguns"}s…`, "run", null, ev.node_id);
+    else pushFeed(NODE_ICO[t] || "🧠", `${ev.name} começou a pensar…`, "run", null, ev.node_id);
+    for (const e of graph.edges) if (e.target === bid) {
       const rec = edgeEls.get(e.id); if (rec) rec.wire.classList.add("flow");
     }
   }
   else if (k === "node_retry") {
     pushFeed("🔁", `${ev.name} falhou (${ev.error}) — tentativa ${ev.attempt} de ${ev.max_attempts}…`, "warn");
-    setNodeStats(ev.node_id, `tentativa ${ev.attempt}…`);
+    setNodeStats(bid, `tentativa ${ev.attempt}…`);
+  }
+  else if (k === "input_needed") {
+    // o cartão de resposta em si vem de st.pending_inputs (renderInputBars,
+    // no mesmo tick) — aqui não precisa de feed extra: o node_start já avisou
   }
   else if (k === "node_output") {
     resolvePending(ev.node_id);
-    setNodeStats(ev.node_id, money(ev.cost_usd) + (ev.attempts > 1 ? ` · ${ev.attempts} tent.` : ""));
+    setNodeStats(bid, money(ev.cost_usd) + (ev.attempts > 1 ? ` · ${ev.attempts} tent.` : ""));
     for (const f of (ev.files_saved || [])) pushFeed("💾", `${ev.name} salvou ${f}`, "ok");
-    pushFeed("💬", `${ev.name} respondeu (${ev.tokens_out} tokens · ${money(ev.cost_usd)}) — clique para ler`, "ok", ev.node_id);
+    if (ev.chosen) pushFeed("🔀", `${ev.name} escolheu a rota "${ev.chosen}"`, "ok", ev.node_id);
+    else pushFeed("💬", `${ev.name} respondeu (${ev.tokens_out} tokens · ${money(ev.cost_usd)}) — clique para ler`, "ok", ev.node_id);
     for (const e of graph.edges) {
       const rec = edgeEls.get(e.id);
       if (!rec) continue;
-      if (e.target === ev.node_id) rec.wire.classList.remove("flow");
-      if (e.source === ev.node_id) flowPulse(rec.wire);
+      if (e.target === bid) rec.wire.classList.remove("flow");
+      if (e.source === bid) flowPulse(rec.wire);
     }
   }
   else if (k === "node_error") {
     resolvePending(ev.node_id);
-    setNodeStats(ev.node_id, ev.attempts > 1 ? `falhou · ${ev.attempts} tent.` : "falhou");
+    setNodeStats(bid, ev.attempts > 1 ? `falhou · ${ev.attempts} tent.` : "falhou");
     pushFeed("❌", `${ev.name} falhou: ${ev.error}`, "err", ev.node_id);
-    stopFlows(ev.node_id);
+    stopFlows(bid);
   }
-  else if (k === "node_skipped") { resolvePending(ev.node_id); pushFeed("⏭", `${ev.name}: ${ev.reason || "pulado"}`, "warn"); stopFlows(ev.node_id); }
+  else if (k === "node_skipped") { resolvePending(ev.node_id); pushFeed("⏭", `${ev.name}: ${ev.reason || "pulado"}`, "warn"); stopFlows(bid); }
   else if (k === "ceiling") pushFeed("💸", `teto de custo atingido (${money(ev.cost_usd)} de ${money(ev.ceiling_usd)}) — execução interrompida`, "warn");
   else if (k === "run_done") {
     // remove qualquer "pensando…" que sobrou (abort no meio, por exemplo)
@@ -1210,6 +1410,34 @@ function flowPulse(path) {
   } catch (e) { /* path pode ter sumido */ }
 }
 
+/* ---- cartões "responda você" (nós 👤 esperando input) ---- */
+let inputBarsKey = "";
+function renderInputBars(list) {
+  const key = list.map(p => p.node_id).join("|");
+  if (key === inputBarsKey) return;  // não recria enquanto você digita
+  inputBarsKey = key;
+  const box = $("inputBars");
+  box.innerHTML = "";
+  for (const p of list) {
+    const card = document.createElement("div");
+    card.className = "inputCard";
+    card.innerHTML = `
+      <div class="q">👤 <b>${esc(p.name)}</b> — ${esc(p.question)}</div>
+      ${p.context ? `<details><summary class="muted" style="cursor:pointer">ver o contexto que chegou até aqui</summary><pre>${esc(p.context)}</pre></details>` : ""}
+      <textarea placeholder="sua resposta… (Ctrl+Enter envia)"></textarea>
+      <div class="row"><span class="muted grow" style="flex:1">sua resposta vira a saída desta caixa e segue pelas setas</span><button class="send">↩ Enviar</button></div>`;
+    const ta = card.querySelector("textarea");
+    const send = async () => {
+      const r = await post("/api/input", { node_id: p.node_id, text: ta.value });
+      if (r) { card.remove(); inputBarsKey = ""; }
+    };
+    card.querySelector(".send").onclick = send;
+    ta.addEventListener("keydown", (e2) => { if (e2.key === "Enter" && e2.ctrlKey) send(); });
+    box.appendChild(card);
+    ta.focus();
+  }
+}
+
 /* ---- status visual dos nós ---- */
 const STATUS_CLASSES = ["running", "done", "error", "skipped"];
 function applyStatuses(map) {
@@ -1222,7 +1450,7 @@ function applyStatuses(map) {
 
 /* ---- drawer de saída completa ---- */
 async function openDrawer(nodeId) {
-  const n = nodeById(nodeId);
+  const n = nodeById(nodeId) || nodeById(baseOf(nodeId));
   try {
     const r = await fetch("/api/output/" + encodeURIComponent(nodeId));
     if (!r.ok) { toast("esse agente ainda não produziu saída", "warn"); return; }
@@ -1408,9 +1636,17 @@ async function doTick() {
   }
   $("resetBtn").classList.toggle("hidden", !(st.phase === "done" || st.phase === "error"));
 
+  renderInputBars(st.pending_inputs || []);
+
   const badge = $("phaseBadge");
-  badge.textContent = PHASE_LABEL[st.phase] || st.phase;
-  badge.className = "badge " + st.phase;
+  const waitingYou = st.phase === "running" && (st.pending_inputs || []).length > 0;
+  badge.textContent = waitingYou ? "aguardando você" : (PHASE_LABEL[st.phase] || st.phase);
+  badge.className = "badge " + (waitingYou ? "waiting_approval" : st.phase);
+
+  const fbCount = Object.values(st.feedback || {}).reduce((a, v) => a + v.length, 0);
+  const fbBtn = $("fbBtn");
+  const fbText = "💬 Feedback" + (fbCount ? ` (${fbCount})` : "");
+  if (fbBtn.textContent !== fbText) fbBtn.textContent = fbText;
 
   const pb = $("projBtn"), pdir = "📂 " + st.project_dir;
   if (pb.textContent !== pdir) pb.textContent = pdir;
@@ -1436,6 +1672,119 @@ async function doTick() {
   if (st.phase === "error" && st.error) badge.title = st.error;
 }
 setInterval(tick, 1000);
+
+/* ================= setup (⚙️): chaves de API + opções ================= */
+const KEY_LABELS = { DEEPSEEK_API_KEY: "DeepSeek", OPENAI_API_KEY: "OpenAI",
+  ANTHROPIC_API_KEY: "Anthropic", GEMINI_API_KEY: "Google Gemini",
+  OPENROUTER_API_KEY: "OpenRouter", MISTRAL_API_KEY: "Mistral", XAI_API_KEY: "xAI (Grok)" };
+
+$("setupBtn").onclick = openSettings;
+async function openSettings() {
+  let d;
+  try { d = await fetch("/api/settings").then(r => r.json()); }
+  catch (e) { toast("não consegui falar com o servidor", "err"); return; }
+  const keysHtml = d.keys.map(k => `
+    <div class="setrow" data-key="${esc(k.name)}">
+      <span class="keydot${k.set ? " ok" : ""}"></span>
+      <code title="${esc(k.name)}">${esc(KEY_LABELS[k.name] || k.name)}</code>
+      <input type="password" placeholder="${k.set ? "configurada (…" + esc(k.tail) + ") — colar aqui substitui" : "colar a chave…"}" spellcheck="false">
+      <button class="secondary ksave">salvar</button>
+    </div>`).join("");
+  $("setBody").innerHTML = `
+    <div class="setsec">🔑 Chaves de API</div>
+    ${keysHtml}
+    <div class="setrow">
+      <span class="keydot"></span>
+      <input type="text" id="setCustomName" placeholder="OUTRA_VARIAVEL_API_KEY" spellcheck="false" style="min-width:170px;flex:0 1 200px">
+      <input type="password" id="setCustomVal" placeholder="valor…" spellcheck="false">
+      <button class="secondary" id="setCustomSave">salvar</button>
+    </div>
+    <div class="setsec">▶ Execução</div>
+    <label class="check" style="margin:8px 0"><input type="checkbox" id="setAutoSave" ${d.auto_save_code ? "checked" : ""}> 💾 salvar código automaticamente — blocos nomeados de QUALQUER agente viram arquivos no projeto (sem precisar marcar agente por agente)</label>
+    <label class="check" style="margin:8px 0"><input type="checkbox" id="setApprove" ${graph.approve_coder ? "checked" : ""}> ⚠️ pedir minha aprovação antes de um agente codador editar arquivos</label>
+    <div class="setrow"><span class="st" style="min-width:230px">💸 teto de custo por execução (US$)</span>
+      <input type="number" id="setCeiling" min="0.05" step="0.05" value="${graph.cost_ceiling_usd ?? 2}"></div>
+    <div class="setrow"><span class="st" style="min-width:230px">⏱ timeout por agente (segundos)</span>
+      <input type="number" id="setTimeout" min="10" max="3600" value="${d.node_timeout_s}"></div>
+    <div class="setrow"><span class="st" style="min-width:230px">🔁 tentativas por agente em falha de API</span>
+      <input type="number" id="setAttempts" min="1" max="5" value="${d.max_attempts}"></div>
+    <div class="muted" style="margin-top:10px">as opções de execução valem para este projeto (<code>${esc(d.project_dir)}</code>); as chaves valem para tudo.</div>`;
+  $("setBody").querySelectorAll(".setrow[data-key]").forEach(row => {
+    row.querySelector(".ksave").onclick = async () => {
+      const value = row.querySelector("input").value.trim();
+      if (!value) { toast("cole a chave antes de salvar", "warn"); return; }
+      const r = await post("/api/keys", { name: row.dataset.key, value });
+      if (r) { toast("chave salva em ~/.zflow/keys.json", "ok"); openSettings(); }
+    };
+  });
+  $("setCustomSave").onclick = async () => {
+    const name = $("setCustomName").value.trim(), value = $("setCustomVal").value.trim();
+    if (!name || !value) { toast("preencha o nome da variável e o valor", "warn"); return; }
+    const r = await post("/api/keys", { name, value });
+    if (r) { toast("chave salva", "ok"); $("setCustomName").value = ""; $("setCustomVal").value = ""; }
+  };
+  $("setAutoSave").onchange = (ev) => post("/api/settings", { auto_save_code: ev.target.checked });
+  $("setApprove").onchange = (ev) => { graph.approve_coder = ev.target.checked; scheduleSave(); };
+  $("setCeiling").onchange = (ev) => {
+    graph.cost_ceiling_usd = Math.max(0.05, parseFloat(ev.target.value) || 2); scheduleSave();
+  };
+  $("setTimeout").onchange = (ev) => post("/api/settings", { node_timeout_s: parseInt(ev.target.value, 10) || 180 });
+  $("setAttempts").onchange = (ev) => post("/api/settings", { max_attempts: parseInt(ev.target.value, 10) || 2 });
+  $("setWrap").classList.remove("hidden");
+}
+$("setClose").onclick = () => $("setWrap").classList.add("hidden");
+$("setWrap").addEventListener("pointerdown", (ev) => { if (ev.target === $("setWrap")) $("setWrap").classList.add("hidden"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("setWrap").classList.add("hidden"); });
+
+/* ================= feedback (💬) para personagens ================= */
+$("fbBtn").onclick = openFeedback;
+function personaOptions() {
+  // um checkbox por PERSONAGEM (instâncias duplicadas contam uma vez)
+  const seen = new Map();
+  for (const n of graph.nodes) {
+    if (!["text", "coder", "cond"].includes(n.type)) continue;
+    const k = n.persona || n.id;
+    if (!seen.has(k)) seen.set(k, n.name);
+  }
+  return [...seen.entries()];  // [pkey, nome]
+}
+function openFeedback() {
+  const opts = personaOptions();
+  const active = (st && st.feedback) || {};
+  const nameOf = {}; for (const [k, nm] of opts) nameOf[k] = nm;
+  const activeHtml = Object.entries(active).flatMap(([k, items]) =>
+    items.map(t => `<div class="fbitem"><b>${esc(nameOf[k] || k)}</b><span>${esc(t)}</span><b class="delx" data-k="${esc(k)}" title="apagar o feedback deste personagem">×</b></div>`)
+  ).join("");
+  $("fbBody").innerHTML = `
+    ${opts.length ? "" : `<div class="muted">adicione agentes ao fluxo primeiro</div>`}
+    <div id="fbAgents">${opts.map(([k, nm]) => `
+      <label class="fbagent"><input type="checkbox" value="${esc(k)}"> ${esc(nm)}</label>`).join("")}</div>
+    <label>Seu feedback</label>
+    <textarea id="fbText" placeholder="ex.: Pare de inventar bibliotecas que não existem; use somente a biblioteca padrão do Python."></textarea>
+    <div class="row" style="margin-top:8px; display:flex; gap:8px; justify-content:flex-end">
+      <button id="fbSend">💬 Enviar para os selecionados</button>
+    </div>
+    ${activeHtml ? `<div class="setsec">feedbacks ativos</div>${activeHtml}
+    <div class="muted" style="margin-top:4px">são injetados em toda fala desses personagens até você apagar (×)</div>` : ""}`;
+  $("fbSend").onclick = async () => {
+    const ids = [...$("fbAgents").querySelectorAll("input:checked")].map(i => i.value);
+    const text = $("fbText").value.trim();
+    if (!ids.length) { toast("selecione pelo menos um agente", "warn"); return; }
+    if (!text) { toast("escreva o feedback", "warn"); return; }
+    const r = await post("/api/feedback", { node_ids: ids, text });
+    if (r) { if (st) st.feedback = r.feedback; toast("feedback registrado — vale a partir da próxima fala deles", "ok"); openFeedback(); $("fbText").value = ""; }
+  };
+  $("fbBody").querySelectorAll(".fbitem .delx").forEach(x => {
+    x.onclick = async () => {
+      const r = await post("/api/feedback/clear", { node_id: x.dataset.k });
+      if (r) { if (st) st.feedback = r.feedback; openFeedback(); }
+    };
+  });
+  $("fbWrap").classList.remove("hidden");
+}
+$("fbClose").onclick = () => $("fbWrap").classList.add("hidden");
+$("fbWrap").addEventListener("pointerdown", (ev) => { if (ev.target === $("fbWrap")) $("fbWrap").classList.add("hidden"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") $("fbWrap").classList.add("hidden"); });
 
 /* ================= tema ================= */
 $("themeBtn").onclick = () => {

@@ -52,6 +52,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from pathlib import Path
 
     from .executor import GraphExecutor
+    from .looping import expand_loops
     from .models import Graph
     from .store import load_graph
 
@@ -64,6 +65,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         graph = Graph.model_validate(data)
     else:
         graph = load_graph(settings.resolved_project_dir())
+    try:
+        graph = expand_loops(graph)  # setas 🔁 viram rodadas
+    except ValueError as exc:
+        print(f"erro: {exc}")
+        return 2
 
     def emit(kind: str, **d) -> None:
         if kind == "node_start":
@@ -83,7 +89,15 @@ def cmd_run(args: argparse.Namespace) -> int:
         ans = input(f"{message} [s = aprovar / p = pular / a = abortar] ").strip().lower()
         return {"s": "approve", "p": "skip", "a": "abort"}.get(ans, "skip")
 
-    executor = GraphExecutor(graph, settings, emit=emit, gate=gate)
+    def ask_input(node, question: str, context: str) -> str:
+        if args.yes:
+            return ""
+        print(f"\n👤 {node.name} — {question}")
+        if context:
+            print(context)
+        return input("sua resposta: ")
+
+    executor = GraphExecutor(graph, settings, emit=emit, gate=gate, input_fn=ask_input)
     try:
         report = executor.run(args.task)
     except ValueError as exc:
@@ -109,6 +123,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # console Windows costuma ser cp1252 e engasga nos emojis (🛑, 🔁…) dos
+    # nomes e motivos; imprimir com '?' é melhor que morrer no meio do run
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="replace")
+            except (OSError, ValueError):
+                pass
     parser = argparse.ArgumentParser(prog="zflow", description="ZayderFlow: fluxos multi-agente")
     sub = parser.add_subparsers(dest="command")
 

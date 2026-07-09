@@ -16,7 +16,10 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class Node(BaseModel):
     id: str
-    type: Literal["text", "coder"] = "text"
+    # text = pensa e escreve (litellm) · coder = edita arquivos (Aider)
+    # human = pausa e espera VOCÊ responder · timer = espera N segundos
+    # cond = roteador (if): escolhe UMA das setas de saída · stop = encerra o ramo
+    type: Literal["text", "coder", "human", "timer", "cond", "stop"] = "text"
     name: str = "Agente"
     model: str = "deepseek/deepseek-v4-flash"  # id litellm
     traits: list[str] = Field(default_factory=list)  # chaves do catálogo (traits.py)
@@ -31,6 +34,7 @@ class Node(BaseModel):
     persona: str = ""
     memory: bool = False  # lembra as conversas anteriores DESTE agente entre execuções
     save_files: bool = False  # salva blocos de código da resposta como arquivos reais
+    wait_s: float = 10.0  # só timer: quantos segundos esperar
     x: float = 0.0
     y: float = 0.0
     files: list[str] = Field(default_factory=list)  # só coder: arquivos-alvo sugeridos
@@ -48,11 +52,14 @@ class Edge(BaseModel):
     source: str  # node id
     target: str
     label: str = ""
-    kind: Literal["normal", "loop"] = "normal"  # "loop" reservado para a fase de ciclos
+    # "loop" = seta de repetição 🔁: volta para um ponto ANTERIOR do fluxo e o
+    # trecho entre target e source roda `rounds` vezes (desenrolado em looping.py)
+    kind: Literal["normal", "loop"] = "normal"
+    rounds: int = 2  # só loop: total de rodadas do trecho repetido
 
     @model_validator(mode="after")
     def _no_self_loop(self) -> "Edge":
-        if self.source == self.target:
+        if self.source == self.target and self.kind != "loop":
             raise ValueError(f"aresta de '{self.source}' para ele mesmo não é permitida")
         return self
 
@@ -88,8 +95,13 @@ class Graph(BaseModel):
         raise KeyError(node_id)
 
     def predecessors(self, node_id: str) -> list[Node]:
-        """Predecessores na ordem das arestas do grafo (ordem estável de input)."""
-        return [self.node(e.source) for e in self.edges if e.target == node_id]
+        """Predecessores na ordem das arestas do grafo (ordem estável de input).
+
+        Setas de loop não contam: elas não são precedência real — antes de
+        executar, looping.expand_loops as transforma em arestas normais.
+        """
+        return [self.node(e.source) for e in self.edges
+                if e.target == node_id and e.kind != "loop"]
 
 
 def persona_key(node: Node) -> str:
@@ -103,8 +115,9 @@ def topo_levels(graph: Graph) -> list[list[Node]]:
 
     Levanta ValueError com mensagem amigável se o grafo tem ciclo.
     """
+    edges = [e for e in graph.edges if e.kind != "loop"]  # loop não é precedência
     indeg = {n.id: 0 for n in graph.nodes}
-    for e in graph.edges:
+    for e in edges:
         indeg[e.target] += 1
     levels: list[list[Node]] = []
     ready = [n for n in graph.nodes if indeg[n.id] == 0]
@@ -114,7 +127,7 @@ def topo_levels(graph: Graph) -> list[list[Node]]:
         placed += len(ready)
         nxt: list[Node] = []
         ready_ids = {n.id for n in ready}
-        for e in graph.edges:
+        for e in edges:
             if e.source in ready_ids:
                 indeg[e.target] -= 1
                 if indeg[e.target] == 0:

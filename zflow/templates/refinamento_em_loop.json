@@ -1,0 +1,20 @@
+{
+  "template_id": "refinamento_em_loop",
+  "name": "Refinamento em loop 🔁",
+  "description": "Gerador e Crítico se revezam em 3 rodadas pela seta de repetição 🔁: a cada volta o Gerador lembra o que escreveu, lê a crítica e melhora. No fim, o Empacotador entrega a versão final com o código salvo no projeto.",
+  "cost_ceiling_usd": 2.0,
+  "approve_coder": true,
+  "nodes": [
+    {"id": "n1", "type": "text", "name": "Gerador", "model": "deepseek/deepseek-v4-flash", "traits": ["criativo"], "save_files": false,
+     "extra_prompt": "Escreva (ou melhore, se houver críticas recebidas) a solução COMPLETA para a tarefa. Se for código, coloque cada arquivo num bloco cercado com o nome na abertura, ex.: ```python jogo.py", "x": 60, "y": 200},
+    {"id": "n2", "type": "text", "name": "Crítico", "model": "deepseek/deepseek-v4-pro", "traits": ["critico", "rigoroso"], "include_task": true,
+     "extra_prompt": "Aponte os problemas mais graves da versão recebida, em ordem de gravidade, com sugestões objetivas de correção. Seja curto e direto.", "x": 420, "y": 200},
+    {"id": "n3", "type": "text", "name": "Empacotador", "model": "deepseek/deepseek-v4-flash", "traits": ["conciso"], "save_files": true,
+     "extra_prompt": "Entregue a versão FINAL da última rodada, limpa e completa. Se for código, mantenha os blocos nomeados (```python arquivo.py) para serem salvos.", "x": 420, "y": 420}
+  ],
+  "edges": [
+    {"id": "e1", "source": "n1", "target": "n2", "label": "versão"},
+    {"id": "e2", "source": "n2", "target": "n1", "label": "críticas", "kind": "loop", "rounds": 3},
+    {"id": "e3", "source": "n1", "target": "n3", "label": "última versão"}
+  ]
+}
