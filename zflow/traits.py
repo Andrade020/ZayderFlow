@@ -137,6 +137,14 @@ def build_system_prompt(node: Node) -> str:
     extra = node.extra_prompt.strip()
     if extra:
         parts.append(extra)
+    if node.save_files:
+        # sem nome detectável o bloco não é salvo — e o modelo às vezes "planeja"
+        # um nome na prosa longe do bloco; esta regra ancora o nome na cerca
+        parts.append(
+            "Ao entregar código, coloque cada arquivo num bloco cercado com o NOME "
+            "do arquivo na própria linha de abertura da cerca, ex.: ```python jogo.py "
+            "— sempre nesse formato, usando o MESMO nome em todas as suas respostas."
+        )
     parts.append(
         "Você receberá uma tarefa e, possivelmente, mensagens de outros agentes. "
         "Responda em português. Emita SOMENTE a sua contribuição, sem repetir as "

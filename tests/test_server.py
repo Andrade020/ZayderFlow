@@ -475,3 +475,58 @@ def test_run_with_bad_loop_is_422(client):
     r = client.post("/api/run", json={"task": "t"})
     assert r.status_code == 422
     assert "ANTERIOR" in r.json()["detail"]
+
+
+# --------------------------------------------------- correções (nomes/pip/troca)
+
+
+def test_run_file_reports_missing_module(client, project_dir):
+    (project_dir / "precisa.py").write_text("import biblioteca_que_nao_existe_xyz\n",
+                                            encoding="utf-8")
+    r = client.post("/api/run-file", json={"path": "precisa.py"}).json()
+    assert r["returncode"] != 0
+    assert r["missing_module"] == "biblioteca_que_nao_existe_xyz"
+    assert r["suggested_package"] == "biblioteca_que_nao_existe_xyz"
+
+
+def test_run_file_maps_module_to_package(client, project_dir, monkeypatch):
+    import zflow.server as srv
+    (project_dir / "visao.py").write_text("import cv2\n", encoding="utf-8")
+    r = client.post("/api/run-file", json={"path": "visao.py"}).json()
+    if r["missing_module"]:  # cv2 não está no venv de teste
+        assert r["suggested_package"] == "opencv-python"
+
+
+def test_install_endpoint_with_fake_pip(client, monkeypatch):
+    import subprocess
+    import zflow.server as srv
+
+    calls = {}
+
+    def fake_pip(package):
+        calls["package"] = package
+        return subprocess.CompletedProcess([], 0, stdout="Successfully installed", stderr="")
+
+    monkeypatch.setattr(srv, "_pip_install", fake_pip)
+    r = client.post("/api/install", json={"package": "requests"})
+    assert r.status_code == 200 and r.json()["ok"] is True
+    assert calls["package"] == "requests"
+    # nome malicioso/inválido é recusado antes de chegar no pip
+    assert client.post("/api/install", json={"package": "x; rm -rf /"}).status_code == 422
+    assert client.post("/api/install", json={"package": "-e ."}).status_code == 422
+
+
+def test_template_load_clears_previous_run(client, diamond_graph):
+    """Regressão: trocar de template não pode 'vazar' saídas antigas para os
+    agentes novos (os ids n1/a/b… se repetem entre fluxos)."""
+    _put_graph(client, diamond_graph)
+    client.post("/api/run", json={"task": "t"})
+    wait_phase(client, "done")
+    assert client.get("/api/output/a").status_code == 200
+    r = client.post("/api/templates/hierarquia/load")
+    assert r.status_code == 200
+    st = client.get("/api/state").json()
+    assert st["phase"] == "idle"
+    assert st["node_status"] == {}
+    # nenhuma saída antiga sobrevive à troca
+    assert client.get("/api/output/a").status_code == 404

@@ -70,3 +70,21 @@ def test_save_named_blocks_writes_only_named(tmp_path):
     assert saved == ["hello.py"]
     assert (tmp_path / "hello.py").read_text(encoding="utf-8") == "print('oi')\n"
     assert not (tmp_path.parent / "escape.py").exists()
+
+
+def test_filename_in_prose_a_few_lines_above():
+    text = ("**snake.py** — o arquivo principal do jogo.\n"
+            "Ele usa apenas a biblioteca padrão.\n\n"
+            "```python\nprint('jogo')\n```")
+    blocks = extract_code_blocks(text)
+    assert blocks[0]["filename"] == "snake.py"
+
+
+def test_save_files_prompt_rule_added():
+    from zflow.models import Node
+    from zflow.traits import build_system_prompt
+
+    with_save = build_system_prompt(Node(id="a", name="G", save_files=True))
+    without = build_system_prompt(Node(id="a", name="G", save_files=False))
+    assert "linha de abertura da cerca" in with_save
+    assert "linha de abertura da cerca" not in without

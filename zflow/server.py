@@ -12,6 +12,7 @@ payload do polling.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -48,6 +49,29 @@ KNOWN_API_KEYS = [
     "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "XAI_API_KEY",
 ]
+
+# código gerado importa bibliotecas que não estão no venv do zflow; ao rodar,
+# detectamos o ModuleNotFoundError e oferecemos instalar o pacote certo
+MISSING_MODULE_RE = re.compile(r"ModuleNotFoundError: No module named '([\w\.]+)'")
+MODULE_TO_PACKAGE = {
+    "cv2": "opencv-python", "PIL": "pillow", "Image": "pillow",
+    "sklearn": "scikit-learn", "skimage": "scikit-image",
+    "yaml": "pyyaml", "bs4": "beautifulsoup4", "dotenv": "python-dotenv",
+    "Crypto": "pycryptodome", "fitz": "pymupdf", "serial": "pyserial",
+    "dateutil": "python-dateutil", "docx": "python-docx", "pptx": "python-pptx",
+    "github": "PyGithub", "telegram": "python-telegram-bot", "wx": "wxPython",
+    "OpenGL": "PyOpenGL", "win32com": "pywin32", "win32api": "pywin32",
+}
+PACKAGE_NAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]*[A-Za-z0-9])?(?:\[[A-Za-z0-9,_\-]+\])?$")
+
+
+def _pip_install(package: str) -> subprocess.CompletedProcess:
+    """pip install no MESMO venv que roda os arquivos (monkeypatchável nos testes)."""
+    return subprocess.run(
+        [sys.executable, "-m", "pip", "install", package],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        timeout=300,
+    )
 
 
 def _open_path(path: Path) -> None:
@@ -392,6 +416,10 @@ class RunFileBody(BaseModel):
     path: str
 
 
+class InstallBody(BaseModel):
+    package: str
+
+
 class InputBody(BaseModel):
     node_id: str
     text: str = ""
@@ -530,6 +558,9 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
         except KeyError:
             raise HTTPException(404, detail="template não encontrado")
         try:
+            # o template novo reusa ids (n1, n2…): sem reset, o 📄 do agente novo
+            # mostraria a saída do agente ANTIGO da execução anterior
+            manager.reset()
             manager.set_graph(graph)
         except RuntimeError as exc:
             raise HTTPException(409, detail=str(exc))
@@ -699,11 +730,15 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
                 encoding="utf-8", errors="replace",
                 timeout=30, input="", env=env,
             )
+            missing = MISSING_MODULE_RE.search(proc.stderr or "")
+            module = missing.group(1).split(".")[0] if missing else None
             return {
                 "returncode": proc.returncode,
                 "timed_out": False,
                 "stdout": proc.stdout[:RUN_OUTPUT_MAX_CHARS],
                 "stderr": proc.stderr[:RUN_OUTPUT_MAX_CHARS],
+                "missing_module": module,
+                "suggested_package": MODULE_TO_PACKAGE.get(module, module) if module else None,
             }
         except subprocess.TimeoutExpired as exc:
             return {
@@ -712,6 +747,22 @@ def create_app(settings: Settings | None = None, text_fn: TextFn | None = None,
                 "stdout": (exc.stdout or "")[:RUN_OUTPUT_MAX_CHARS],
                 "stderr": "(interrompido: passou de 30s — programa interativo ou loop infinito?)",
             }
+
+    @app.post("/api/install")
+    def install(body: InstallBody):
+        pkg = body.package.strip()
+        if not PACKAGE_NAME_RE.fullmatch(pkg):
+            raise HTTPException(422, detail=f"nome de pacote inválido: {pkg}")
+        try:
+            proc = _pip_install(pkg)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(500, detail="pip demorou demais (5 min) — instale manualmente")
+        output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+        return {
+            "ok": proc.returncode == 0,
+            "returncode": proc.returncode,
+            "output": output[-RUN_OUTPUT_MAX_CHARS:],
+        }
 
     @app.post("/api/reveal")
     def reveal():

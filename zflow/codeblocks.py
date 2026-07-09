@@ -46,7 +46,10 @@ def _find_filename(info: str, code: str, prose_before: str) -> str | None:
     m = COMMENT_FILENAME_RE.match(first_line)
     if m and _plausible(m.group(1)):
         return m.group(1)
-    for line in reversed([ln for ln in prose_before.splitlines() if ln.strip()][-2:]):
+    # prosa logo antes do bloco: da linha mais próxima para a mais distante
+    # (janela de 4 linhas — o modelo costuma anunciar o nome um pouco antes,
+    # ex.: "**snake.py** — arquivo principal:" seguido de uma linha em branco)
+    for line in reversed([ln for ln in prose_before.splitlines() if ln.strip()][-4:]):
         for m in FILENAME_RE.finditer(line):
             if _plausible(m.group(1)):
                 return m.group(1)

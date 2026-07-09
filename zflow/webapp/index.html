@@ -966,6 +966,10 @@ $("importFile").onchange = async (ev) => {
     if (!Array.isArray(data.nodes)) throw new Error("sem lista de nós");
     if (graph.nodes.length && !confirm("Importar substitui o fluxo atual. Continuar?")) return;
     graph = Object.assign({ name: "importado", edges: [], max_rounds: 1, cost_ceiling_usd: 2.0, approve_coder: true }, data);
+    await post("/api/reset");  // ids repetidos não podem herdar saídas antigas
+    clearFeed();
+    nodeStats = {};
+    applyStatuses({});
     $("graphName").value = graph.name;
     select(null);
     renderAll();
@@ -995,6 +999,7 @@ $("tplBtn").onclick = async () => {
       if (card.dataset.id === "__blank__") {
         graph = { name: "sem título", nodes: [], edges: [], max_rounds: 1,
                   cost_ceiling_usd: 2.0, approve_coder: true };
+        await post("/api/reset");  // descarta saídas/status da execução anterior
         await saveNow();
         toast("canvas limpo — comece do zero", "ok");
       } else {
@@ -1003,6 +1008,11 @@ $("tplBtn").onclick = async () => {
         graph = r;
         toast("template carregado — ajuste e rode", "ok");
       }
+      // fluxo novo, elenco novo: nada da execução anterior pode "vazar" pros
+      // agentes novos (os ids n1, n2… se repetem entre templates)
+      clearFeed();
+      nodeStats = {};
+      applyStatuses({});
       $("graphName").value = graph.name || "sem título";
       select(null);
       renderAll();
@@ -1240,6 +1250,7 @@ function assembledPrompt(n) {
   const parts = [`Você é "${n.name}", um agente num fluxo com vários agentes de IA.`];
   for (const k of n.traits) if (byKey[k]) parts.push(byKey[k]);
   if (n.extra_prompt.trim()) parts.push(n.extra_prompt.trim());
+  if (n.save_files) parts.push("Ao entregar código, coloque cada arquivo num bloco cercado com o NOME do arquivo na própria linha de abertura da cerca, ex.: ```python jogo.py — sempre nesse formato, usando o MESMO nome em todas as suas respostas.");
   parts.push("Você receberá uma tarefa e, possivelmente, mensagens de outros agentes. Responda em português. Emita SOMENTE a sua contribuição, sem repetir as mensagens recebidas.");
   return parts.join("\n");
 }
@@ -1579,21 +1590,43 @@ async function openFile(path) {
     row.classList.toggle("on", row.dataset.path === path));
   $("fileView").textContent = d.content + (d.truncated ? "\n\n… (arquivo grande, mostrando o começo)" : "");
   $("runOut").classList.add("hidden");
+  const oldRow = $("installRow"); if (oldRow) oldRow.remove();
   $("runFileBtn").classList.toggle("hidden", !path.endsWith(".py"));
 };
-$("runFileBtn").onclick = async () => {
+async function runCurrentFile() {
   if (!currentFile) return;
   const btn = $("runFileBtn");
   btn.disabled = true; btn.textContent = "⏳ rodando…";
   const r = await post("/api/run-file", { path: currentFile });
   btn.disabled = false; btn.textContent = "▶ Rodar este arquivo";
+  const old = $("installRow"); if (old) old.remove();
   if (!r) return;
   const out = $("runOut");
   out.classList.remove("hidden");
   const status = r.timed_out ? "⏱ timeout" : (r.returncode === 0 ? "✔ saiu com código 0" : "✘ saiu com código " + r.returncode);
   out.innerHTML = `<span class="${r.returncode === 0 && !r.timed_out ? "ok" : "err"}">${status}</span>\n` +
     esc(r.stdout || "") + (r.stderr ? `\n<span class="err">${esc(r.stderr)}</span>` : "");
-};
+  // biblioteca faltando no venv? oferece instalar com um clique e rodar de novo
+  if (r.missing_module && r.suggested_package) {
+    const row = document.createElement("div");
+    row.id = "installRow";
+    row.innerHTML = `<button class="secondary">📦 Instalar <b>${esc(r.suggested_package)}</b> e rodar de novo</button>`;
+    const ib = row.querySelector("button");
+    ib.onclick = async () => {
+      ib.disabled = true; ib.textContent = `⏳ instalando ${r.suggested_package}… (pode levar um minuto)`;
+      const ri = await post("/api/install", { package: r.suggested_package });
+      row.remove();
+      if (!ri) return;
+      if (ri.ok) { toast(r.suggested_package + " instalado", "ok"); runCurrentFile(); }
+      else {
+        toast("a instalação falhou — veja o log", "err");
+        out.innerHTML += `\n<span class="err">${esc(ri.output || "pip falhou")}</span>`;
+      }
+    };
+    $("filePane").appendChild(row);
+  }
+}
+$("runFileBtn").onclick = runCurrentFile;
 $("revealBtn").onclick = async () => {
   const r = await post("/api/reveal");
   if (r) toast("pasta aberta no explorador", "ok");
